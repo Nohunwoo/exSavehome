@@ -1,5 +1,6 @@
 // app/(tabs)/index.tsx
 import React, { useState } from 'react';
+import { Colors } from '@/constants/Colors';
 import {
   View,
   Text,
@@ -18,7 +19,8 @@ import {
   FontAwesome, // 2. Bubble 컴포넌트용 아이콘
   Ionicons,
 } from '@expo/vector-icons';
-// import { useRouter } from 'expo-router'; // 3. router는 더 이상 필요 없으므로 삭제
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router'; 
 
 // 4. 채팅 메시지 타입을 정의합니다.
 type MessageType = {
@@ -65,7 +67,7 @@ export default function MainScreen() {
   // 7. 채팅 내역과 입력 텍스트를 state로 관리합니다.
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [text, setText] = useState('');
-
+  const router = useRouter();
   const handleSend = () => {
     if (text.trim().length === 0) return;
 
@@ -109,12 +111,12 @@ export default function MainScreen() {
 
   return (
     // 11. 키보드가 올라올 때 화면이 가려지지 않도록 설정
+    <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={100} // 헤더 높이만큼 조절
     >
-      {/* 12. messages가 1개라도 있으면 FlatList(채팅창)를, 없으면 renderEmptyState를 보여줌 */}
       {messages.length > 0 ? (
         <FlatList
           style={styles.chatList}
@@ -143,12 +145,15 @@ export default function MainScreen() {
             <Feather name="send" size={24} color="#007AFF" />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.iconButton}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => router.push('/(tabs)/map')}>
             <MaterialIcons name="location-pin" size={24} color="#555" />
           </TouchableOpacity>
         )}
       </View>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

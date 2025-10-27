@@ -3,6 +3,7 @@
 import { Redirect, useRootNavigationState } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { ActivityIndicator, View } from 'react-native';
+import React from 'react';
 
 export default function Index() {
   const { isLoggedIn } = useAuth();
