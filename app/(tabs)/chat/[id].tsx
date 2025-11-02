@@ -2,81 +2,132 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  FlatList, KeyboardAvoidingView, Platform
+  FlatList, KeyboardAvoidingView, Platform, Alert
 } from 'react-native';
 import {
   Feather, MaterialCommunityIcons, MaterialIcons,
   FontAwesome, Ionicons
 } from '@expo/vector-icons';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChat } from '@/contexts/ChatContext';
 import { Colors } from '@/constants/Colors';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 
 // --- (이전 index.tsx의 컴포넌트들) ---
 type MessageType = { id: string; text: string; type: 'question' | 'answer' };
 type BubbleProps = { text: string; type: 'question' | 'answer' };
 
-const Bubble = ({ text, type }: BubbleProps) => (
-  <View style={[styles.bubble, type === 'question' ? styles.questionBubble : styles.answerBubble]}>
-    <Text style={type === 'question' ? styles.bubbleTextUser : styles.bubbleTextBot}>
-      {text}
-    </Text>
-    {type === 'answer' && (
-      <View style={styles.iconRow}>
-        <TouchableOpacity><FontAwesome name="copy" size={18} color="#555" /></TouchableOpacity>
-        <TouchableOpacity style={{ marginLeft: 10 }}><Ionicons name="share-outline" size={18} color="#555" /></TouchableOpacity>
-      </View>
-    )}
-  </View>
-);
+const Bubble = ({ text, type }: BubbleProps) => {
+
+  // 3. 복사하기 기능
+  const handleCopy = async () => {
+    await Clipboard.setStringAsync(text);
+    Alert.alert("복사 완료", "AI 답변이 클립보드에 복사되었습니다.");
+  };
+
+  // 4. 공유하기 기능
+  const handleShare = async () => {
+    // Sharing.isAvailableAsync()로 공유 가능한지 확인하는 로직을 추가할 수 있습니다.
+    await Sharing.shareAsync(text);
+  };
+
+  return (
+    <View style={[styles.bubble, type === 'question' ? styles.questionBubble : styles.answerBubble]}>
+      <Text style={type === 'question' ? styles.bubbleTextUser : styles.bubbleTextBot}>
+        {text}
+      </Text>
+      {/* 답변일 때만 복사/공유 버튼 표시 */}
+      {type === 'answer' && (
+        <View style={styles.iconRow}>
+          <TouchableOpacity onPress={handleCopy}>
+            <FontAwesome name="copy" size={18} color="#555" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShare} style={{ marginLeft: 10 }}>
+            <Ionicons name="share-outline" size={18} color="#555" />
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+};
 // ---
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState<MessageType[]>([]);
+  // const [messages, setMessages] = useState<MessageType[]>([]);
   const [text, setText] = useState('');
+  
+  const { id } = useLocalSearchParams();
+  const sessionId = Array.isArray(id) ? id[0] : id; 
 
-  const { id } = useLocalSearchParams(); // 1. URL에서 채팅방 ID 가져오기
-  const { updateChatTitle } = useChat(); // 2. 채팅방 제목 업데이트 함수
-  const navigation = useNavigation(); // 3. 헤더 제목 변경을 위해
+  // 3. ChatContext에서 필요한 것들을 가져옵니다.
+  const { chatSessions, updateChatTitle, addMessage } = useChat();
+  const navigation = useNavigation();
 
-  // 4. 채팅방 ID가 바뀔 때마다 채팅 내역 초기화 (시뮬레이션)
-  // (실제 앱에서는 여기서 ID에 맞는 과거 내역을 불러옵니다)
-  useEffect(() => {
-    setMessages([]);
-  }, [id]);
+  // 4. 전역 chatSessions에서 현재 채팅방의 메시지를 찾습니다.
+  const currentSession = chatSessions.find(session => session.id === sessionId);
+  const messages = currentSession ? currentSession.messages : [];
 
-  // 5. 첫 질문 시, 채팅방 제목을 업데이트
   const updateTitleIfNeeded = (questionText: string) => {
-    if (messages.length === 0) { // 이 채팅방의 첫 질문이라면
+    if (messages.length === 0) {
       const newTitle = questionText.length > 20 
         ? `${questionText.substring(0, 20)}...` 
         : questionText;
+      
+      updateChatTitle(sessionId, newTitle);
+      navigation.setOptions({ title: newTitle });
+    }
+  };
 
-      updateChatTitle(id as string, newTitle); // 전역 상태 업데이트
-      navigation.setOptions({ title: newTitle }); // 헤더 제목 업데이트
+  const handlePickDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync();
+
+    if (!result.canceled) {
+      const file = result.assets[0];
+      const fileMessage: MessageType = {
+        id: Date.now().toString(),
+        text: `[파일 첨부] ${file.name}`,
+        type: 'question',
+      };
+
+      updateTitleIfNeeded(`파일: ${file.name}`);
+      addMessage(sessionId, fileMessage);
+
+      // AI가 파일을 "받았다"고 시뮬레이션
+      setTimeout(() => {
+        const newAnswer: MessageType = {
+          id: (Date.now() + 1).toString(),
+          text: `"${file.name}" 파일에 대한 AI 답변입니다. (파일 분석 중...)`,
+          type: 'answer',
+        };
+        addMessage(sessionId, newAnswer);
+      }, 1000);
     }
   };
 
   const handleSend = () => {
-    if (text.trim().length === 0) return;
+      if (text.trim().length === 0 || !sessionId) return;
 
-    const newQuestion: MessageType = { id: Date.now().toString(), text, type: 'question' };
+      const newQuestion: MessageType = { id: Date.now().toString(), text, type: 'question' };
+      
+      updateTitleIfNeeded(text);
+      
+      // 5. 로컬 state 대신 Context에 메시지 추가
+      addMessage(sessionId, newQuestion); 
+      setText('');
 
-    updateTitleIfNeeded(text); // 6. 제목 업데이트
-
-    setMessages((prev) => [...prev, newQuestion]);
-    setText('');
-
-    setTimeout(() => {
-      const newAnswer: MessageType = {
-        id: (Date.now() + 1).toString(),
-        text: `"${newQuestion.text}"에 대한 AI 답변입니다.`,
-        type: 'answer',
-      };
-      setMessages((prev) => [...prev, newAnswer]);
-    }, 1000);
-  };
+      setTimeout(() => {
+        const newAnswer: MessageType = {
+          id: (Date.now() + 1).toString(),
+          text: `"${newQuestion.text}"에 대한 AI 답변입니다.`,
+          type: 'answer',
+        };
+        // 5. Context에 답변 메시지 추가
+        addMessage(sessionId, newAnswer);
+      }, 1000);
+    };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
@@ -96,12 +147,11 @@ export default function ChatScreen() {
 
       {/* 8. 하단 입력창 */}
       <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.iconButton}>
+        <TouchableOpacity style={styles.iconButton} onPress={handlePickDocument}>
           <MaterialCommunityIcons name="paperclip" size={24} color="#555" />
         </TouchableOpacity>
         <TextInput
           style={styles.input}
-          placeholder="텍스트 공간이에여"
           value={text}
           onChangeText={setText}
         />
@@ -110,7 +160,9 @@ export default function ChatScreen() {
             <Feather name="send" size={24} color={Colors.accent} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.iconButton}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => router.push('/(tabs)/map')}>
             <MaterialIcons name="location-pin" size={24} color="#555" />
           </TouchableOpacity>
         )}

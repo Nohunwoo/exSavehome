@@ -63,7 +63,7 @@ function CustomHeaderRight() {
 
   return (
     <View style={{ flexDirection: 'row', marginRight: 15 }}>
-      <TouchableOpacity onPress={() => { /* TODO: 검색 기능 구현 */ }}>
+      <TouchableOpacity onPress={() => router.push('/search')}>
         <Feather name="search" size={24} color="black" style={{ marginRight: 15 }} />
       </TouchableOpacity>
       
@@ -110,7 +110,7 @@ export default function AppLayout() {
           headerRight: () => <CustomHeaderRight />,
         })}
       />
-      {/* 6. 실제 채팅 화면 (새로 추가) */}
+      {/* 6. 실제 채팅 화면 */}
       <Drawer.Screen
         name="chat/[id]"
         options={({ navigation, route }) => ({
@@ -138,12 +138,11 @@ export default function AppLayout() {
         }}
       />
       <Drawer.Screen
-        name="settings"
+        name="settings" // 'app/(tabs)/settings' 폴더를 가리킴
         options={{
           title: '환경설정',
           drawerItemStyle: { display: 'none' },
-          headerStyle: { backgroundColor: Colors.darkNavy }, 
-          headerTintColor: Colors.text, 
+          headerShown: false, // <-- 중요: 이 헤더를 끄고 settings 그룹의 자체 헤더를 사용
         }}
       />
     </Drawer>
@@ -179,13 +178,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: 15,
     paddingHorizontal: 20,
     borderRadius: 8,
     marginHorizontal: 10,
-    backgroundColor: Colors.darkBlue, // 2. 색상 적용
+    backgroundColor: Colors.darkBlue,
     marginBottom: 8,
   },
   chatItemIndex: {

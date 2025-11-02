@@ -49,12 +49,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Link>
         </View>
-        <TouchableOpacity style={[styles.button, styles.googleButton]}>
-          <AntDesign name="google" size={18} color="#000" />
-          <Text style={[styles.buttonText, { marginLeft: 10 }]}>
-            Register with Google
-          </Text>
-        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );

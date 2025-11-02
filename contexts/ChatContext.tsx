@@ -1,18 +1,26 @@
-// contexts/ChatContext.tsx
+/// contexts/ChatContext.tsx
 import React, { createContext, useContext, useState, PropsWithChildren } from 'react';
 
-// 채팅 세션의 정보
+// 1. 메시지 타입을 Context에서 정의
+export type MessageType = {
+  id: string;
+  text: string;
+  type: 'question' | 'answer';
+};
+
+// 2. 채팅 세션이 메시지 목록을 포함하도록 변경
 type ChatSession = {
   id: string;
   title: string;
   lastUpdated: number;
+  messages: MessageType[]; // <--- 메시지 배열 추가
 };
 
-// Context가 제공할 기능
 type ChatContextType = {
   chatSessions: ChatSession[];
-  createChat: () => string; // 새 채팅을 만들고, 그 ID를 반환
-  updateChatTitle: (id: string, title: string) => void; // 채팅방 제목 업데이트
+  createChat: () => string;
+  updateChatTitle: (id: string, title: string) => void;
+  addMessage: (sessionId: string, message: MessageType) => void; // <--- 새 함수
 };
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -20,37 +28,46 @@ const ChatContext = createContext<ChatContextType | null>(null);
 export const ChatProvider = ({ children }: PropsWithChildren) => {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
 
-  // 새로운 채팅 세션을 생성하는 함수
   const createChat = () => {
     const newId = Date.now().toString();
     const newSession: ChatSession = {
       id: newId,
-      title: '새로운 상담', // 기본 제목
+      title: '새로운 상담',
       lastUpdated: Date.now(),
+      messages: [], // <--- 빈 메시지 배열로 시작
     };
-
-    // 새 채팅을 목록의 맨 위에 추가
     setChatSessions((prev) => [newSession, ...prev]);
-    return newId; // 새 채팅방의 ID를 반환
+    return newId;
   };
 
-  // 채팅방의 제목을 업데이트하는 함수 (첫 질문 시 호출)
   const updateChatTitle = (id: string, title: string) => {
-    setChatSessions(prev =>
-      prev.map(chat =>
+    setChatSessions((prev) =>
+      prev.map((chat) =>
         chat.id === id ? { ...chat, title, lastUpdated: Date.now() } : chat
       )
     );
   };
 
+  // 3. 특정 세션에 메시지를 추가하는 함수
+  const addMessage = (sessionId: string, message: MessageType) => {
+    setChatSessions((prev) =>
+      prev.map((chat) =>
+        chat.id === sessionId
+          ? { ...chat, messages: [...chat.messages, message] } // 메시지 추가
+          : chat
+      )
+    );
+  };
+
   return (
-    <ChatContext.Provider value={{ chatSessions, createChat, updateChatTitle }}>
+    <ChatContext.Provider
+      value={{ chatSessions, createChat, updateChatTitle, addMessage }} // 4. addMessage 제공
+    >
       {children}
     </ChatContext.Provider>
   );
 };
 
-// ChatContext를 쉽게 사용하기 위한 훅
 export const useChat = () => {
   const context = useContext(ChatContext);
   if (!context) {
