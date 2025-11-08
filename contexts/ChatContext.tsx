@@ -1,11 +1,12 @@
 /// contexts/ChatContext.tsx
 import React, { createContext, useContext, useState, PropsWithChildren } from 'react';
 
-// 1. 메시지 타입을 Context에서 정의
+// 1. 메시지 타입을 Context에서 정의 (imageUri 추가)
 export type MessageType = {
   id: string;
   text: string;
   type: 'question' | 'answer';
+  imageUri?: string; // 이미지 URI 추가 (선택적 속성)
 };
 
 // 2. 채팅 세션이 메시지 목록을 포함하도록 변경
@@ -53,7 +54,7 @@ export const ChatProvider = ({ children }: PropsWithChildren) => {
     setChatSessions((prev) =>
       prev.map((chat) =>
         chat.id === sessionId
-          ? { ...chat, messages: [...chat.messages, message] } // 메시지 추가
+          ? { ...chat, messages: [...chat.messages, message], lastUpdated: Date.now() } // 메시지 추가 + 시간 업데이트
           : chat
       )
     );
