@@ -9,7 +9,6 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons';
 import { Logo } from '@/components/ui/Logo'; 
 import { useAuth } from '@/contexts/AuthContext';
 
