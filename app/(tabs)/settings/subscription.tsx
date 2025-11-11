@@ -108,6 +108,7 @@ export default function SubscriptionScreen() {
           name="베이직 플랜"
           price="₩9,900"
           period="월"
+          popular={true}
           features={[
             '일일 50회 질문 가능',
             '고급 법률 자문',
@@ -116,23 +117,6 @@ export default function SubscriptionScreen() {
             '우선 고객 지원',
           ]}
           onSelect={() => handleSelectPlan('베이직 플랜')}
-        />
-
-        <PlanCard
-          name="프리미엄 플랜"
-          price="₩19,900"
-          period="월"
-          popular={true}
-          features={[
-            '무제한 질문',
-            '전문가 법률 자문',
-            '채팅 기록 무제한 보관',
-            '문서 첨부 무제한',
-            '24/7 전담 고객 지원',
-            '법률 문서 자동 작성',
-            '변호사 직접 연결 서비스',
-          ]}
-          onSelect={() => handleSelectPlan('프리미엄 플랜')}
         />
 
         <View style={styles.footer}>
