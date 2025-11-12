@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = 'http://ceprj.gachon.ac.kr:60003/api';
+const API_BASE_URL = 'http://ceprj.gachon.ac.kr:60003/';
 
 const api = axios.create({
     baseURL: API_BASE_URL,
@@ -25,9 +25,8 @@ api.interceptors.response.use(
     (response) => response,
     async (error) => {
         if (error.response?.status === 401) {
-            // 토큰 만료시 로그인 화면으로
             await AsyncStorage.removeItem('authToken');
-            // 로그인 화면으로 이동 로직
+            await AsyncStorage.removeItem('userInfo');
         }
         return Promise.reject(error);
     }
@@ -35,12 +34,42 @@ api.interceptors.response.use(
 
 export const authService = {
     login: async (userId: string, password: string) => {
+        // 1. 백엔드로 로그인 요청
         const response = await api.post('/auth/login', { userId, password });
-        if (response.data.success && response.data.token) {
-            await AsyncStorage.setItem('authToken', response.data.token);
-            await AsyncStorage.setItem('userInfo', JSON.stringify(response.data.user));
+        const data = response.data;
+
+        // 2. 백엔드 응답 확인 (백엔드는 { message, userId, userRole }을 줌)
+        // userId가 존재하면 로그인 성공으로 간주합니다.
+        if (response.status === 200 && data.userId) {
+            
+            // [핵심] 백엔드가 토큰을 안 주므로, 'userId' 자체를 토큰으로 사용합니다.
+            const sessionToken = data.userId; 
+
+            // 3. 사용자 정보 객체 구성
+            const userInfo = {
+                id: data.userId,
+                role: data.userRole,
+                // 이름은 백엔드에서 안 넘어오므로 ID로 대체하거나 비워둠
+                name: data.userId 
+            };
+
+            // 4. 기기에 세션 정보 저장
+            await AsyncStorage.setItem('authToken', sessionToken);
+            await AsyncStorage.setItem('userInfo', JSON.stringify(userInfo));
+
+            // 5. AuthContext가 에러를 내지 않도록 { success: true }를 포함해 리턴
+            return {
+                success: true,
+                message: data.message || '로그인 성공',
+                user: userInfo
+            };
         }
-        return response.data;
+
+        // 실패한 경우
+        return {
+            success: false,
+            message: data.message || '로그인 실패'
+        };
     },
 
     register: async (userId: string, password: string, userName: string) => {
