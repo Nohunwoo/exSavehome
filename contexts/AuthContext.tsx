@@ -1,28 +1,50 @@
 // contexts/AuthContext.tsx
-import React, { createContext, useContext, useState, useEffect, PropsWithChildren } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  PropsWithChildren,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// 1. 실제 authService를 import합니다.
+import { authService } from '@/constants/api'; 
+import { UserProfile } from '@/types'; // (types/index.ts에 UserProfile이 있다고 가정)
 
-// 'userToken'은 실제 앱에서 사용할 토큰 키입니다.
-const TOKEN_KEY = 'userToken';
+// 2. api.ts에서 사용하는 토큰 키로 통일합니다.
+const TOKEN_KEY = 'authToken'; 
 
 type AuthContextType = {
-  isLoggedIn: boolean | null; // null = 로딩 중, true = 로그인, false = 로그아웃
-  login: () => Promise<void>; // 비동기 처리
-  logout: () => Promise<void>; // 비동기 처리
+  isLoggedIn: boolean | null;
+  user: UserProfile | null; // 3. 사용자 정보를 저장할 state 추가
+  userId: string | null; // 4. subscription.tsx가 사용할 customerKey (userId)
+  login: (userId: string, password: string) => Promise<void>; // 5. 파라미터 추가
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
-  // null 상태는 "아직 확인 중"임을 의미합니다.
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    // 앱이 처음 시작될 때 저장된 토큰이 있는지 확인합니다.
+    // 6. 앱 시작 시 실제 'authToken'을 확인합니다.
     const checkAuthStatus = async () => {
       try {
         const token = await AsyncStorage.getItem(TOKEN_KEY);
-        setIsLoggedIn(!!token); // 토큰이 있으면 true, 없으면 false
+        setIsLoggedIn(!!token);
+
+        if (token) {
+          // 7. 토큰이 있다면 'userInfo'도 불러옵니다.
+          const userInfo = await AsyncStorage.getItem('userInfo');
+          if (userInfo) {
+            const parsedUser: UserProfile = JSON.parse(userInfo);
+            setUser(parsedUser);
+            setUserId(parsedUser.id); // (UserProfile에 id 필드가 있다고 가정)
+          }
+        }
       } catch (e) {
         console.error('Failed to load auth status', e);
         setIsLoggedIn(false);
@@ -32,25 +54,44 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     checkAuthStatus();
   }, []);
 
-  const login = async () => {
-    // 실제로는 여기서 서버로부터 토큰을 받아옵니다.
-    await AsyncStorage.setItem(TOKEN_KEY, 'dummy-auth-token');
-    setIsLoggedIn(true);
+  // 8. 실제 authService.login을 호출하는 함수로 수정
+  const login = async (userIdStr: string, password: string) => {
+    try {
+      const response = await authService.login(userIdStr, password);
+      if (response.success) {
+        setIsLoggedIn(true);
+        // 9. api.ts가 저장한 userInfo를 불러와서 state에 저장
+        const userInfo = await AsyncStorage.getItem('userInfo');
+        if (userInfo) {
+          const parsedUser: UserProfile = JSON.parse(userInfo);
+          setUser(parsedUser);
+          setUserId(parsedUser.id);
+        }
+      } else {
+        throw new Error(response.message || 'Login failed');
+      }
+    } catch (e) {
+      console.error('Login error in AuthContext', e);
+      setIsLoggedIn(false);
+      throw e; // 오류를 login.tsx로 다시 던져서 UI 처리
+    }
   };
 
+  // 10. 실제 authService.logout을 호출
   const logout = async () => {
-    await AsyncStorage.removeItem(TOKEN_KEY);
+    await authService.logout();
     setIsLoggedIn(false);
+    setUser(null);
+    setUserId(null);
   };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, login, logout }}>
+    <AuthContext.Provider value={{ isLoggedIn, user, userId, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// useAuth 훅 (변경 없음)
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
