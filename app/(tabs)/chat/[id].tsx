@@ -1,5 +1,5 @@
 // app/(tabs)/chat/[id].tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,15 @@ import {
   Platform,
   KeyboardAvoidingView,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useChat } from '@/contexts/ChatContext';
 import { Colors } from '@/constants/Colors';
+import { consultService } from '@/constants/api';
 
 type MessageType = {
   id: string;
@@ -25,7 +27,6 @@ type MessageType = {
   imageUri?: string;
 };
 
-// 말풍선 컴포넌트
 const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'answer'; imageUri?: string }) => {
   const isQuestion = type === 'question';
   return (
@@ -44,32 +45,89 @@ const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'an
 
 export default function ChatDetailScreen() {
   const [text, setText] = useState('');
+  const [messages, setMessages] = useState<MessageType[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [chatTitle, setChatTitle] = useState('새 상담');
+  const flatListRef = useRef<FlatList>(null);
+  
   const params = useLocalSearchParams();
   const sessionId = Array.isArray(params.id) ? params.id[0] : params.id;
-
-  const { chatSessions, updateChatTitle, addMessage } = useChat();
+  const initialMessage = Array.isArray(params.initialMessage) 
+    ? params.initialMessage[0] 
+    : params.initialMessage;
+  
   const navigation = useNavigation();
 
-  const currentSession = chatSessions.find(session => session.id === sessionId);
-  const messages = currentSession ? currentSession.messages : [];
-
-  const updateTitleIfNeeded = (questionText: string) => {
-    if (messages.length === 0) {
-      const newTitle = questionText.length > 20
-        ? `${questionText.substring(0, 20)}...`
-        : questionText;
-
-      updateChatTitle(sessionId, newTitle);
-      navigation.setOptions({ title: newTitle });
+  // 채팅방 제목 업데이트
+  useEffect(() => {
+    if (chatTitle) {
+      navigation.setOptions({
+        title: chatTitle,
+      });
     }
+  }, [chatTitle, navigation]);
+
+  // 첫 메시지 처리
+  useEffect(() => {
+    if (initialMessage) {
+      handleFirstMessage(initialMessage);
+    }
+  }, []);
+
+  // 첫 메시지 전송
+  const handleFirstMessage = async (messageText: string) => {
+    const userMessage: MessageType = {
+      id: Date.now().toString(),
+      text: messageText,
+      type: 'question',
+    };
+    
+    setMessages([userMessage]);
+    setChatTitle(messageText.substring(0, 20));
+
+    // AI 응답 시뮬레이션
+    setTimeout(() => {
+      const aiMessage: MessageType = {
+        id: (Date.now() + 1).toString(),
+        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다. 잠시만 기다려주세요...`,
+        type: 'answer',
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    }, 1000);
   };
 
-  // 이미지 선택 핸들러
+  // 일반 메시지 전송
+  const handleSend = async () => {
+    if (!text.trim()) return;
+
+    const messageText = text.trim();
+    setText('');
+
+    const userMessage: MessageType = {
+      id: Date.now().toString(),
+      text: messageText,
+      type: 'question',
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+
+    // AI 응답 시뮬레이션
+    setTimeout(() => {
+      const aiMessage: MessageType = {
+        id: (Date.now() + 1).toString(),
+        text: `"${messageText}"에 대한 AI 답변입니다.`,
+        type: 'answer',
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    }, 1000);
+  };
+
+  // 이미지 선택
   const handlePickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (permissionResult.granted === false) {
-      alert('갤러리 접근 권한이 필요합니다.');
+      Alert.alert('권한 필요', '갤러리 접근 권한이 필요합니다.');
       return;
     }
 
@@ -91,43 +149,25 @@ export default function ChatDetailScreen() {
         imageUri: imageUri,
       };
 
-      updateTitleIfNeeded(`이미지: ${fileName}`);
-      addMessage(sessionId, imageMessage);
+      setMessages(prev => [...prev, imageMessage]);
 
-      // AI가 이미지를 "분석한다"고 시뮬레이션
       setTimeout(() => {
-        const newAnswer: MessageType = {
+        const aiMessage: MessageType = {
           id: (Date.now() + 1).toString(),
           text: `이미지를 분석하고 있습니다. 잠시만 기다려주세요...`,
           type: 'answer',
         };
-        addMessage(sessionId, newAnswer);
+        setMessages(prev => [...prev, aiMessage]);
       }, 1000);
     }
   };
 
-  const handleSend = () => {
-    if (text.trim().length === 0 || !sessionId) return;
-
-    const newQuestion: MessageType = {
-      id: Date.now().toString(),
-      text,
-      type: 'question',
-    };
-
-    updateTitleIfNeeded(text);
-    addMessage(sessionId, newQuestion);
-    setText('');
-
-    setTimeout(() => {
-      const newAnswer: MessageType = {
-        id: (Date.now() + 1).toString(),
-        text: `"${newQuestion.text}"에 대한 AI 답변입니다.`,
-        type: 'answer',
-      };
-      addMessage(sessionId, newAnswer);
-    }, 1000);
-  };
+  // 자동 스크롤
+  useEffect(() => {
+    if (messages.length > 0) {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [messages]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
@@ -136,8 +176,8 @@ export default function ChatDetailScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={100}
       >
-        {/* 채팅 내역 */}
         <FlatList
+          ref={flatListRef}
           style={styles.chatList}
           data={messages}
           renderItem={({ item }) => (
@@ -147,11 +187,11 @@ export default function ChatDetailScreen() {
           contentContainerStyle={{ padding: 10 }}
         />
 
-        {/* 하단 입력창 */}
         <View style={styles.inputContainer}>
           <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
             <MaterialCommunityIcons name="image" size={24} color="#555" />
           </TouchableOpacity>
+          
           <TextInput
             style={styles.input}
             value={text}
@@ -160,6 +200,7 @@ export default function ChatDetailScreen() {
             placeholderTextColor="#999"
             multiline
           />
+          
           {text.trim().length > 0 ? (
             <TouchableOpacity style={styles.iconButton} onPress={handleSend}>
               <Ionicons name="send" size={24} color={Colors.accent} />

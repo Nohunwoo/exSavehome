@@ -29,9 +29,6 @@ export default function LoginScreen() {
     
     try {
       setLoading(true);
-      // AuthContext -> api.ts를 거쳐 백엔드 호출
-      // 이제 api.ts가 성공 여부를 명확히 처리하므로,
-      // 성공 시에는 에러 없이 아래 코드가 실행됩니다.
       await auth.login(email, password);
       
       // 로그인 성공 시 메인 화면으로 이동
@@ -39,8 +36,6 @@ export default function LoginScreen() {
       
     } catch (e: any) {
       console.error('Login Flow Error:', e);
-      // api.ts 혹은 AuthContext에서 던진 에러 메시지 표시
-      // e.message가 "로그인 성공!"인 경우는 이제 발생하지 않습니다.
       Alert.alert('로그인 실패', e.message || '서버와 통신 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);

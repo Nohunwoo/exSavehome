@@ -1,5 +1,5 @@
 // app/(tabs)/settings/subscription.tsx
-import React, { useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,23 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '@/constants/Colors';
+import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { subscriptionService } from '@/constants/api';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
+import { Colors } from '@/constants/Colors';
+import api from '@/constants/api';
 
-// 가이드에서 제공된 테스트 클라이언트 키
-const TOSS_CLIENT_KEY = 'test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq';
+const TOSS_CLIENT_KEY = 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm'; // 실제 키로 변경
 
-// (PlanCardProps, PlanCard 컴포넌트는 변경 없음)
 type PlanCardProps = {
   name: string;
   price: string;
   period: string;
   features: string[];
   popular?: boolean;
-  currentPlan?: boolean;
   onSelect: () => void;
 };
 
@@ -36,7 +33,6 @@ const PlanCard: React.FC<PlanCardProps> = ({
   period,
   features,
   popular = false,
-  currentPlan = false,
   onSelect,
 }) => {
   return (
@@ -46,13 +42,11 @@ const PlanCard: React.FC<PlanCardProps> = ({
           <Text style={styles.popularText}>인기</Text>
         </View>
       )}
-
       <Text style={styles.planName}>{name}</Text>
       <View style={styles.priceContainer}>
         <Text style={styles.price}>{price}</Text>
         <Text style={styles.period}>/ {period}</Text>
       </View>
-
       <View style={styles.featuresContainer}>
         {features.map((feature, index) => (
           <View key={index} style={styles.featureRow}>
@@ -61,128 +55,197 @@ const PlanCard: React.FC<PlanCardProps> = ({
           </View>
         ))}
       </View>
-
-      <TouchableOpacity
-        style={[
-          styles.selectButton,
-          currentPlan && styles.currentPlanButton,
-        ]}
-        onPress={onSelect}
-        disabled={currentPlan}
-      >
-        <Text style={styles.selectButtonText}>
-          {currentPlan ? '현재 플랜' : '선택하기'}
-        </Text>
+      <TouchableOpacity style={styles.selectButton} onPress={onSelect}>
+        <Text style={styles.selectButtonText}>선택하기</Text>
       </TouchableOpacity>
     </View>
   );
 };
 
 export default function SubscriptionScreen() {
+  const [showWebView, setShowWebView] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const webViewRef = useRef<WebView>(null);
 
-  /**
-   * [실제 구현 3단계]
-   * 딥링크로 authKey를 받으면, 백엔드에 빌링키 발급 및 결제 승인을 요청합니다.
-   */
-  const handleBillingKeyIssuance = async (
-    authKey: string,
-    planName: string,
-    amount: number,
-  ) => {
+  // WebView에서 사용할 HTML (토스 SDK 포함)
+  const getPaymentHTML = (customerKey: string) => `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://js.tosspayments.com/v1/payment-widget"></script>
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+          }
+          #payment-widget { margin-bottom: 20px; }
+          #payment-button {
+            width: 100%;
+            padding: 16px;
+            background: #0064FF;
+            color: white;
+            border: none;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+          }
+          #payment-button:disabled {
+            background: #ccc;
+          }
+          .loading {
+            text-align: center;
+            color: #666;
+            margin-top: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div id="payment-widget"></div>
+        <button id="payment-button">구독하기 (월 20,000원)</button>
+        <div id="status" class="loading"></div>
+        
+        <script>
+          const clientKey = '${TOSS_CLIENT_KEY}';
+          const customerKey = '${customerKey}';
+          const button = document.getElementById('payment-button');
+          const status = document.getElementById('status');
+          
+          const paymentWidget = PaymentWidget(clientKey, customerKey);
+          
+          // 카드 등록 UI 렌더링
+          paymentWidget.renderPaymentMethods(
+            '#payment-widget',
+            { value: 20000 },
+            { variantKey: 'DEFAULT' }
+          );
+          
+          button.addEventListener('click', async function() {
+            try {
+              button.disabled = true;
+              status.textContent = '카드 정보를 확인하는 중...';
+              
+              // 빌링키 발급 요청
+              const authKey = await paymentWidget.requestBillingAuth({
+                method: 'CARD',
+                customerEmail: 'customer@example.com',
+                customerName: '고객명',
+              });
+              
+              status.textContent = '결제를 처리하는 중...';
+              
+              // React Native로 authKey 전달
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'AUTH_SUCCESS',
+                authKey: authKey,
+                customerKey: customerKey
+              }));
+              
+            } catch (error) {
+              button.disabled = false;
+              status.textContent = '';
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'ERROR',
+                message: error.message || '결제 처리 중 오류가 발생했습니다.'
+              }));
+            }
+          });
+        </script>
+      </body>
+    </html>
+  `;
+
+  // WebView 메시지 처리
+  const handleWebViewMessage = async (event: any) => {
     try {
-      Alert.alert('알림', '카드 등록 정보로 빌링키 발급을 요청합니다...');
-      const issueResponse = await subscriptionService.issueBillingKey(authKey);
-
-      if (!issueResponse.success) { // (백엔드 응답 형식에 따름)
-        throw new Error('빌링키 발급에 실패했습니다.');
+      const data = JSON.parse(event.nativeEvent.data);
+      
+      if (data.type === 'AUTH_SUCCESS') {
+        setLoading(true);
+        
+        // 백엔드의 confirmAndCharge 호출
+        const response = await api.post('/sub/confirmAndCharge', {
+          authKey: data.authKey,
+          customerKey: data.customerKey,
+          amount: 20000,
+          orderName: '프리미엄 구독 1개월'
+        });
+        
+        if (response.data.ok) {
+          setShowWebView(false);
+          Alert.alert(
+            '구독 성공!',
+            '프리미엄 멤버십이 활성화되었습니다.',
+            [{ text: '확인' }]
+          );
+        } else {
+          throw new Error(response.data.message || '결제 승인 실패');
+        }
+        
+      } else if (data.type === 'ERROR') {
+        Alert.alert('오류', data.message);
       }
-
-      console.log('빌링키 발급 성공:', issueResponse.billingKey);
-
-      Alert.alert('알림', '첫 구독 결제를 승인합니다...');
-      const approveResponse = await subscriptionService.approveFirstPayment(
-        planName,
-        amount,
-      );
-
-      if (approveResponse.status === 'DONE') {
-        Alert.alert('구독 신청 완료', `${planName} 구독이 시작되었습니다.`);
-        // TODO: 여기서 사용자의 구독 상태를 갱신해야 합니다.
-      } else {
-        throw new Error(
-          `결제 승인 실패: ${approveResponse.message || '알 수 없는 오류'}`,
-        );
-      }
-    } catch (error) {
-      console.error('구독 처리 실패:', error);
-      let errorMessage = '구독 처리 중 오류가 발생했습니다.';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      Alert.alert('오류', errorMessage);
+      
+    } catch (error: any) {
+      console.error('구독 처리 오류:', error);
+      Alert.alert('구독 실패', error.message || '구독 처리 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  /**
-   * [실제 구현 2단계]
-   * 딥링크 이벤트를 수신합니다. (앱이 켜져있을 때)
-   */
-  useEffect(() => {
-    const handleDeepLink = (event: { url: string }) => {
-      const { path, queryParams } = Linking.parse(event.url);
-      
-      console.log("딥링크 수신:", event.url);
-
-      if (path === 'sub/success' && queryParams?.authKey) {
-        handleBillingKeyIssuance(
-          queryParams.authKey as string,
-          '베이직 플랜', // (플랜 정보는 상태(state)로 관리하는 것이 좋습니다)
-          9900,
-        );
-      } else if (path === 'sub/fail') {
-        Alert.alert('오류', `카드 등록에 실패했습니다: ${queryParams?.message || '알 수 없는 오류'}`);
-      }
-    };
-
-    const subscription = Linking.addEventListener('url', handleDeepLink);
-    return () => subscription.remove();
-  }, []);
-
-  /**
-   * [실제 구현 1단계]
-   * 버튼 클릭 시, 토스 결제창을 WebBrowser로 엽니다.
-   */
-  const handleSelectPlan = async (planName: string, amount: number) => {
+  // 플랜 선택 시
+  const handleSelectPlan = async () => {
+  try {
     const userInfo = await AsyncStorage.getItem('userInfo');
     const user = userInfo ? JSON.parse(userInfo) : null;
-    const customerKey = user?.userId;
-
-    if (!customerKey) {
+    
+    if (!user?.id) {  // ← userId가 아닌 id
       Alert.alert('오류', '로그인이 필요합니다.');
       return;
     }
+    
+    setUserId(user.id);  // ← userId가 아닌 id
+    setShowWebView(true);
+  } catch (error) {
+    Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+  }
+};
 
-    // (app.json의 scheme "exsavehome"을 사용)
-    const successUrl = Linking.createURL('sub/success'); // exsavehome://sub/success
-    const failUrl = Linking.createURL('sub/fail');       // exsavehome://sub/fail
+  // WebView 모드
+  if (showWebView && userId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.webViewHeader}>
+          <TouchableOpacity 
+            onPress={() => setShowWebView(false)}
+            style={styles.closeButton}
+          >
+            <Ionicons name="close" size={28} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.webViewTitle}>결제 정보 입력</Text>
+        </View>
+        <WebView
+          ref={webViewRef}
+          source={{ html: getPaymentHTML(userId) }}
+          onMessage={handleWebViewMessage}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+        />
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#0064FF" />
+            <Text style={styles.loadingText}>결제 처리 중...</Text>
+          </View>
+        )}
+      </SafeAreaView>
+    );
+  }
 
-    // --- 중요 ---
-    // 이 URL은 백엔드(sub.js)가 호스팅하는 *웹페이지*여야 합니다.
-    // 이 웹페이지는 토스 가이드의 HTML/JS SDK 코드를 포함하고 있어야 합니다.
-    const tossBillingPageUrl = `http://ceprj.gachon.ac.kr:60003/web/subscribe?customerKey=${customerKey}&clientKey=${TOSS_CLIENT_KEY}&successUrl=${encodeURIComponent(successUrl)}&failUrl=${encodeURIComponent(failUrl)}`;
-
-    try {
-      // 1. WebBrowser로 카드 등록 웹페이지를 엽니다.
-      await WebBrowser.openBrowserAsync(tossBillingPageUrl);
-      
-      // 2. 사용자가 웹페이지에서 인증을 완료하면, 토스 서버는 successUrl(딥링크)로 리다이렉트합니다.
-      // 3. useEffect의 Linking 리스너가 딥링크를 감지하여 handleBillingKeyIssuance를 호출합니다.
-
-    } catch (error) {
-      Alert.alert('오류', '결제창을 여는 데 실패했습니다.');
-    }
-  };
-
+  // 플랜 선택 화면
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.content}>
@@ -197,41 +260,28 @@ export default function SubscriptionScreen() {
           name="무료 플랜"
           price="₩0"
           period="월"
-          currentPlan={true} // (TODO: 실제 사용자 구독 상태 연동)
           features={[
             '일일 10회 질문 가능',
             '기본 법률 자문',
             '채팅 기록 7일 보관',
-            '커뮤니티 지원',
           ]}
-          onSelect={() => {}}
+          onSelect={() => Alert.alert('알림', '현재 무료 플랜을 사용 중입니다.')}
         />
 
         <PlanCard
-          name="베이직 플랜"
-          price="₩9,900"
+          name="프리미엄 플랜"
+          price="₩20,000"
           period="월"
           popular={true}
           features={[
-            '일일 50회 질문 가능',
+            '무제한 질문',
             '고급 법률 자문',
             '채팅 기록 무제한 보관',
             '문서 첨부 기능',
             '우선 고객 지원',
           ]}
-          onSelect={() => {
-            handleSelectPlan('베이직 플랜', 9900);
-          }}
+          onSelect={handleSelectPlan}
         />
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            * 모든 플랜은 언제든지 변경 또는 취소 가능합니다.
-          </Text>
-          <Text style={styles.footerText}>
-            * 결제는 안전하게 처리됩니다.
-          </Text>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -240,7 +290,7 @@ export default function SubscriptionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.darkNavy,
+    backgroundColor: Colors.background,
   },
   content: {
     flex: 1,
@@ -262,9 +312,10 @@ const styles = StyleSheet.create({
   },
   planCard: {
     backgroundColor: Colors.darkBlue,
-    margin: 15,
+    borderRadius: 16,
     padding: 20,
-    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -289,7 +340,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: Colors.text,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   priceContainer: {
     flexDirection: 'row',
@@ -318,31 +369,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.text,
     marginLeft: 10,
-    flex: 1,
   },
   selectButton: {
     backgroundColor: Colors.accent,
-    padding: 15,
-    borderRadius: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
-  },
-  currentPlanButton: {
-    backgroundColor: Colors.darkBlue,
-    borderWidth: 1,
-    borderColor: Colors.textSecondary,
   },
   selectButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  footer: {
-    padding: 20,
-    paddingBottom: 40,
+  webViewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
-  footerText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 8,
+  closeButton: {
+    padding: 4,
+  },
+  webViewTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 16,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
   },
 });

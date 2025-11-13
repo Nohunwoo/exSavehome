@@ -22,23 +22,44 @@ api.interceptors.request.use(
 
 // 응답 인터셉터
 api.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-        if (error.response?.status === 401) {
-            await AsyncStorage.removeItem('authToken');
-            await AsyncStorage.removeItem('userInfo');
-        }
-        return Promise.reject(error);
-    }
+  (response) => response,
+  (error) => {
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      // 401 에러 처리 (로그인 실패)
+      if (status === 401) {
+        // 에러 메시지를 그대로 throw
+        throw new Error(data.message || '인증에 실패했습니다.');
+      }
+      
+      // 400 에러 처리
+      if (status === 400) {
+        throw new Error(data.message || '잘못된 요청입니다.');
+      }
+      
+      // 500 에러 처리
+      if (status === 500) {
+        throw new Error(data.message || '서버 오류가 발생했습니다.');
+      }
+      
+      // 기타 에러
+        throw new Error(data.message || data.error || '요청 처리 중 오류가 발생했습니다.');
+      } else if (error.request) {
+        throw new Error('서버와 연결할 수 없습니다. 네트워크를 확인해주세요.');
+      }
+      
+    return Promise.reject(error);
+  }
 );
-
+//로그인 페이지
 export const authService = {
     login: async (userId: string, password: string) => {
         // 1. 백엔드로 로그인 요청
         const response = await api.post('/auth/login', { userId, password });
         const data = response.data;
 
-        // 2. 백엔드 응답 확인 (백엔드는 { message, userId, userRole }을 줌)
+        // 2. 백엔드 응답 확인 
         // userId가 존재하면 로그인 성공으로 간주합니다.
         if (response.status === 200 && data.userId) {
             
@@ -82,70 +103,71 @@ export const authService = {
         await AsyncStorage.removeItem('userInfo');
     }
 };
-
+// 상담 서비스 추가
 export const consultService = {
-    create: async (title: string, content: string) => {
-        const userInfo = await AsyncStorage.getItem('userInfo');
-        const user = userInfo ? JSON.parse(userInfo) : null;
-        
-        const response = await api.post('/cons/create', {
-            userId: user?.userId,
-            title,
-            content
-        });
-        return response.data;
-    },
-
-    getList: async () => {
-        const userInfo = await AsyncStorage.getItem('userInfo');
-        const user = userInfo ? JSON.parse(userInfo) : null;
-        
-        const response = await api.get(`/cons/list/${user?.userId}`);
-        return response.data;
+  // 상담 생성
+  create: async (userId: string, title: string, content: string) => {
+    try {
+      const response = await api.post('/cons/create', {
+        userId,
+        title,
+        content,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('상담 생성 API 오류:', error);
+      throw error;
     }
-};
+  },
 
+  // 상담 목록 조회
+  getList: async (userId: string) => {
+    const response = await api.get(`/cons/${userId}`);
+    return response.data;
+  },
+
+  // 메시지 전송 (임시 - 실제로는 message API 사용)
+  sendMessage: async (consId: string, sender: 'USER' | 'AI', content: string) => {
+    // TODO: 실제 message API 연동
+    return { success: true };
+  },
+
+  // 메시지 목록 조회 (임시)
+  getMessages: async (consId: string) => {
+    // TODO: 실제 message API 연동
+    return [];
+  },
+};
+//구독 서비스 페이지
 export const subscriptionService = {
-  /**
-   * [가이드 3단계] 빌링키 발급 요청
-   * 카드 등록 성공 후 받은 authKey를 백엔드로 전송합니다.
-   * @param authKey - 토스 결제창에서 받은 일회성 인증 키
-   */
   issueBillingKey: async (authKey: string) => {
     const userInfo = await AsyncStorage.getItem('userInfo');
     const user = userInfo ? JSON.parse(userInfo) : null;
-    const customerKey = user?.userId; // customerKey로 사용자의 ID를 사용합니다.
+    const customerKey = user?.id; 
 
     if (!customerKey) {
       throw new Error('User information is not found.');
     }
 
-    // sub.js에 새로 만든 /sub/issue-billing-key 엔드포인트 호출
     const response = await api.post('/sub/issue-billing-key', {
       authKey,
       customerKey,
     });
 
-    return response.data; // { success: true, billingKey: "..." } 같은 응답을 기대
+    return response.data;
   },
 
-  /**
-   * [가이드 4단계] 발급된 빌링키로 첫 결제 승인 요청
-   * @param orderName - 주문명
-   * @param amount - 결제 금액
-   */
   approveFirstPayment: async (orderName: string, amount: number) => {
     const userInfo = await AsyncStorage.getItem('userInfo');
     const user = userInfo ? JSON.parse(userInfo) : null;
-    const customerKey = user?.userId; // 백엔드가 DB에서 billingKey를 찾기 위함
+    const customerKey = user?.id; 
 
     if (!customerKey) {
       throw new Error('User information is not found.');
     }
 
-    const orderId = `order_${Date.now()}`; // 고유한 주문 ID 생성
+    const orderId = `order_${Date.now()}`;
 
-    // sub.js에 새로 만든 /sub/approve-payment 엔드포인트 호출
     const response = await api.post('/sub/approve-payment', {
       customerKey,
       amount,
@@ -153,26 +175,108 @@ export const subscriptionService = {
       orderId,
     });
 
-    return response.data; // 최종 결제 승인 결과 (Payment 객체)
+    return response.data;
   },
 
-  /**
-   * 구독 해지
-   * (sub.js의 /cancel 엔드포인트와 일치)
-   */
   cancelSubscription: async () => {
     const userInfo = await AsyncStorage.getItem('userInfo');
     const user = userInfo ? JSON.parse(userInfo) : null;
 
-    if (!user?.userId) {
+    if (!user?.id) {  // 
       throw new Error('User information is not found.');
     }
 
     const response = await api.post('/sub/cancel', {
-      userId: user.userId,
+      userId: user.id,  // 
     });
     return response.data;
   },
 };
+//FAQ(자주묻는 질문) 페이지
+export const faqService = {
+  // 모든 FAQ 가져오기
+  getAll: async () => {
+    const response = await api.get('admin/faq/');
+    return response.data;
+  },
 
+  // 특정 FAQ 가져오기
+  getOne: async (faqId: number) => {
+    const response = await api.get(`/faq/${faqId}`);
+    return response.data;
+  },
+
+  // FAQ 생성 (관리자용)
+  create: async (faqQ: string, faqA: string) => {
+    const response = await api.post('/faq/', { faqQ, faqA });
+    return response.data;
+  },
+
+  // FAQ 수정 (관리자용)
+  update: async (faqId: number, faqQ: string, faqA: string) => {
+    const response = await api.put(`/faq/${faqId}`, { faqQ, faqA });
+    return response.data;
+  },
+
+  // FAQ 삭제 (관리자용)
+  delete: async (faqId: number) => {
+    const response = await api.delete(`/faq/${faqId}`);
+    return response.data;
+  },
+};
+
+//공지사항 페이지
+export const noticeService = {
+  // 모든 공지사항 가져오기
+  getAll: async () => {
+    try {
+      const response = await api.get('/admin/notice');
+      console.log('공지사항 API 응답:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('공지사항 API 오류:', error);
+      
+      // 404 오류 시 더미 데이터 반환
+      if (error.response?.status === 404 || error.code === 'ECONNREFUSED') {
+        console.log('더미 공지사항 데이터를 사용합니다.');
+        return [
+          {
+            NOTICE_ID: 1,
+            NOTICE_INFO: JSON.stringify({
+              type: '시스템',
+              title: '테스트',
+              desc: '테스트용 수정'
+            })
+          }
+        ];
+      }
+      
+      throw error;
+    }
+  },
+
+  // 특정 공지사항 가져오기
+  getOne: async (noticeId: number) => {
+    const response = await api.get(`/notice/${noticeId}`);
+    return response.data;
+  },
+
+  // 공지사항 생성 (관리자용)
+  create: async (noticeInfo: string) => {
+    const response = await api.post('/notice', { noticeInfo });
+    return response.data;
+  },
+
+  // 공지사항 수정 (관리자용)
+  update: async (noticeId: number, noticeInfo: string) => {
+    const response = await api.put(`/notice/${noticeId}`, { noticeInfo });
+    return response.data;
+  },
+
+  // 공지사항 삭제 (관리자용)
+  delete: async (noticeId: number) => {
+    const response = await api.delete(`/notice/${noticeId}`);
+    return response.data;
+  },
+};
 export default api;

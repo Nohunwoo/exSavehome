@@ -87,7 +87,7 @@ export default function SettingsScreen() {
           <MenuItem
             icon={<MaterialCommunityIcons name="bullhorn" size={20} color="#fff" />}
             name="공지사항"
-            onPress={() => router.push('/(tabs)/settings/announcements')}
+            onPress={() => router.push('/(tabs)/settings/notice')}
           />
           <MenuItem
             icon={<Feather name="help-circle" size={20} color="#fff" />}
