@@ -81,11 +81,6 @@ export default function AboutScreen() {
               label="마지막 업데이트"
               value="2025년 11월 6일"
             />
-            <InfoItem
-              icon={<Ionicons name="download" size={24} color={Colors.accent} />}
-              label="다운로드"
-              value="10,000+"
-            />
           </View>
         </View>
 

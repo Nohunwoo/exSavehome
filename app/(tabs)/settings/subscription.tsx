@@ -1,4 +1,4 @@
-// app/(tabs)/settings/subscription.tsx (수정 버전 2 - API 엔드포인트 수정)
+// app/(tabs)/settings/subscription.tsx
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -11,12 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { WebView } from 'react-native-webview';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { WebView, WebViewNavigation } from 'react-native-webview';
 import { Colors } from '@/constants/Colors';
 import api from '@/constants/api';
+import { useAuth } from '@/contexts/AuthContext';
 
-const TOSS_CLIENT_KEY = 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm';
+// ✅ 클라이언트 키 (테스트용)
+const TOSS_CLIENT_KEY = 'test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq'; 
 
 type PlanCardProps = {
   name: string;
@@ -65,239 +66,166 @@ const PlanCard: React.FC<PlanCardProps> = ({
 export default function SubscriptionScreen() {
   const [showWebView, setShowWebView] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const { userId, isLoggedIn } = useAuth();
   const webViewRef = useRef<WebView>(null);
 
-  // WebView HTML - 토스 Payment Widget 사용
+  // ✅ [수정됨] Buffer 오류 해결 및 customerKey 안전 변환
+  // 토스 허용 문자: 영문 대소문자, 숫자, -, _, =, .
+  // 1. 이메일(@)은 '-at-'으로 변환하여 식별 가능하게 함
+  // 2. 그 외 허용되지 않는 문자(한글, 공백 등)는 모두 제거
+  const safeCustomerKey = userId 
+    ? userId.replace(/@/g, '-at-').replace(/[^a-zA-Z0-9-=_.]/g, '')
+    : `ANONYMOUS_${Date.now()}`;
+
   const getPaymentHTML = (customerKey: string) => `
     <!DOCTYPE html>
     <html>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="https://js.tosspayments.com/v1/payment-widget"></script>
+        <script src="https://js.tosspayments.com/v1/payment"></script>
         <style>
           body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            padding: 20px;
-            background: #f5f5f5;
-            margin: 0;
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            background: #f5f5f5; 
+            font-family: sans-serif;
           }
-          #payment-widget { 
-            margin-bottom: 20px; 
-            min-height: 300px;
-          }
-          #payment-button {
-            width: 100%;
-            padding: 16px;
-            background: #0064FF;
-            color: white;
-            border: none;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-top: 10px;
-          }
-          #payment-button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-          }
-          .loading {
-            text-align: center;
-            color: #666;
-            margin-top: 20px;
-            font-size: 14px;
-          }
-          .error {
-            text-align: center;
-            color: #ff4444;
-            margin-top: 10px;
-            font-size: 14px;
-            padding: 10px;
-            background: #ffe6e6;
-            border-radius: 8px;
-          }
+          .container { text-align: center; }
         </style>
       </head>
       <body>
-        <div id="payment-widget"></div>
-        <button id="payment-button" disabled>로딩 중...</button>
-        <div id="status" class="loading">위젯을 불러오는 중...</div>
-        
+        <div class="container">
+          <h2>결제 요청 중...</h2>
+          <p>잠시만 기다려주세요.</p>
+        </div>
         <script>
           const clientKey = '${TOSS_CLIENT_KEY}';
           const customerKey = '${customerKey}';
-          const button = document.getElementById('payment-button');
-          const status = document.getElementById('status');
-          
-          let paymentWidget = null;
-          
-          async function init() {
+
+          function init() {
             try {
-              console.log('Payment Widget 초기화 시작');
+              const tossPayments = TossPayments(clientKey);
               
-              // PaymentWidget 초기화
-              paymentWidget = await window.PaymentWidget(clientKey, customerKey);
-              
-              console.log('Widget 생성 완료, 렌더링 시작');
-              
-              // 결제 위젯 렌더링
-              await paymentWidget.renderPaymentMethods(
-                '#payment-widget',
-                { value: 20000, currency: 'KRW', country: 'KR' },
-                { variantKey: 'DEFAULT' }
-              );
-              
-              console.log('Widget 렌더링 완료');
-              
-              button.disabled = false;
-              button.textContent = '구독하기 (월 20,000원)';
-              status.textContent = '';
+              // successUrl을 localhost로 설정하여 앱에서 가로챔
+              tossPayments.requestBillingAuth('카드', {
+                customerKey: customerKey,
+                successUrl: 'http://localhost/success',
+                failUrl: 'http://localhost/fail',
+              })
+              .catch(function (error) {
+                if (error.code === 'USER_CANCEL') {
+                   window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'CANCEL'
+                  }));
+                } else {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'ERROR',
+                    message: error.message
+                  }));
+                }
+              });
               
             } catch (error) {
-              console.error('위젯 초기화 실패:', error);
-              status.className = 'error';
-              status.textContent = '결제 위젯을 불러오지 못했습니다: ' + error.message;
-              button.disabled = true;
-              button.textContent = '초기화 실패';
-              
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'ERROR',
-                message: '결제 위젯 초기화 실패: ' + error.message
+                message: error.message
               }));
             }
           }
           
-          button.addEventListener('click', async function() {
-            if (!paymentWidget) {
-              alert('결제 위젯이 초기화되지 않았습니다.');
-              return;
-            }
-            
-            try {
-              button.disabled = true;
-              status.className = 'loading';
-              status.textContent = '카드 정보를 확인하는 중...';
-              
-              console.log('결제 요청 시작');
-              
-              // 토스페이먼츠 결제 요청
-              // successUrl과 failUrl은 실제로는 사용되지 않지만 필수 파라미터
-              const result = await paymentWidget.requestPayment({
-                orderId: 'order_' + Date.now(),
-                orderName: '프리미엄 구독 1개월',
-                successUrl: window.location.origin + '/success',
-                failUrl: window.location.origin + '/fail',
-                customerEmail: 'customer@example.com',
-                customerName: '고객',
-              });
-              
-              console.log('결제 응답:', result);
-              
-              status.textContent = '결제를 처리하는 중...';
-              
-              // React Native로 결제 정보 전달
-              // paymentKey 또는 transactionKey를 authKey로 전달
-              const authKey = result.paymentKey || result.transactionKey || result.authKey;
-              
-              window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'AUTH_SUCCESS',
-                authKey: authKey,
-                customerKey: customerKey
-              }));
-              
-            } catch (error) {
-              console.error('결제 오류:', error);
-              button.disabled = false;
-              status.className = 'error';
-              status.textContent = error.message || '결제 처리 중 오류가 발생했습니다.';
-              
-              window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'ERROR',
-                message: error.message || '결제 처리 중 오류가 발생했습니다.'
-              }));
-            }
-          });
-          
-          // 초기화 실행
-          init();
+          // 로드 즉시 실행
+          setTimeout(init, 500);
         </script>
       </body>
     </html>
   `;
 
-  // WebView 메시지 처리
-  const handleWebViewMessage = async (event: any) => {
+  // URL 변경 감지 및 처리
+  const handleNavigationStateChange = async (navState: WebViewNavigation) => {
+    const { url } = navState;
+    
+    if (!url) return;
+
+    // 성공 URL 감지
+    if (url.includes('http://localhost/success')) {
+      webViewRef.current?.stopLoading();
+      
+      const params = new URLSearchParams(url.split('?')[1]);
+      const authKey = params.get('authKey');
+
+      if (authKey) {
+        setLoading(true);
+        try {
+          console.log('인증 성공, authKey:', authKey);
+          console.log('전송할 customerKey:', safeCustomerKey);
+          
+          // 백엔드 승인 요청
+          // 주의: 백엔드는 이 safeCustomerKey로 DB를 조회하므로, 
+          // 만약 DB에 저장된 ID와 달라지면 업데이트가 안 될 수 있습니다.
+          // (하지만 COMMON_ERROR를 피하려면 이 변환이 필수입니다)
+          const response = await api.post('/sub/billing/confirm', {
+            authKey: authKey,
+            customerKey: safeCustomerKey, 
+            amount: 20000,
+            orderName: '프리미엄 구독 1개월'
+          });
+
+          setShowWebView(false);
+          
+          if (response.data.ok) {
+            Alert.alert('성공', '구독이 시작되었습니다!');
+          } else {
+            Alert.alert('실패', response.data.message || '결제 승인에 실패했습니다.');
+          }
+        } catch (error: any) {
+          console.error(error);
+          Alert.alert('오류', '서버 통신 중 오류가 발생했습니다.');
+          setShowWebView(false);
+        } finally {
+          setLoading(false);
+        }
+      }
+      return false;
+    }
+
+    // 실패 URL 감지
+    if (url.includes('http://localhost/fail')) {
+      webViewRef.current?.stopLoading();
+      const params = new URLSearchParams(url.split('?')[1]);
+      const message = params.get('message') || '결제에 실패했습니다.';
+      
+      setShowWebView(false);
+      Alert.alert('결제 실패', decodeURIComponent(message));
+      return false;
+    }
+    
+    return true;
+  };
+
+  const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      console.log('WebView 메시지 수신:', data);
-      
-      if (data.type === 'AUTH_SUCCESS') {
-        setLoading(true);
-        
-        console.log('백엔드 API 호출 시작:', {
-          authKey: data.authKey,
-          customerKey: data.customerKey,
-        });
-        
-        // ✅ 올바른 엔드포인트: /sub/billing/confirm (subRouter.js와 일치)
-        const response = await api.post('/sub/billing/confirm', {
-          authKey: data.authKey,
-          customerKey: data.customerKey,
-          amount: 20000,
-          orderName: '프리미엄 구독 1개월'
-        });
-        
-        console.log('백엔드 응답:', response.data);
-        
-        if (response.data.ok) {
-          setShowWebView(false);
-          Alert.alert(
-            '구독 성공!',
-            '프리미엄 멤버십이 활성화되었습니다.',
-            [{ text: '확인' }]
-          );
-        } else {
-          throw new Error(response.data.message || '결제 승인 실패');
-        }
-        
-      } else if (data.type === 'ERROR') {
-        console.error('WebView 오류:', data.message);
+      if (data.type === 'ERROR') {
+        setShowWebView(false);
         Alert.alert('오류', data.message);
+      } else if (data.type === 'CANCEL') {
+        setShowWebView(false);
       }
-      
-    } catch (error: any) {
-      console.error('구독 처리 오류:', error);
-      Alert.alert(
-        '구독 실패', 
-        error.response?.data?.message || error.message || '구독 처리 중 오류가 발생했습니다.'
-      );
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) {}
   };
 
-  // 플랜 선택 시
-  const handleSelectPlan = async () => {
-    try {
-      const userInfo = await AsyncStorage.getItem('userInfo');
-      const user = userInfo ? JSON.parse(userInfo) : null;
-      
-      if (!user?.id) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        return;
-      }
-      
-      console.log('사용자 ID:', user.id);
-      setUserId(user.id);
-      setShowWebView(true);
-    } catch (error) {
-      console.error('사용자 정보 로드 실패:', error);
-      Alert.alert('오류', '사용자 정보를 불러올 수 없습니다.');
+  const handleSelectPlan = () => {
+    if (!isLoggedIn || !userId) {
+      Alert.alert('로그인 필요', '로그인 후 이용해주세요.');
+      return;
     }
+    setShowWebView(true);
   };
 
-  // WebView 모드
+  // WebView 렌더링
   if (showWebView && userId) {
     return (
       <SafeAreaView style={styles.container}>
@@ -308,34 +236,32 @@ export default function SubscriptionScreen() {
           >
             <Ionicons name="close" size={28} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.webViewTitle}>결제 정보 입력</Text>
+          <Text style={styles.webViewTitle}>구독 결제</Text>
         </View>
+        
         <WebView
           ref={webViewRef}
-          source={{ html: getPaymentHTML(userId) }}
-          onMessage={handleWebViewMessage}
+          source={{ 
+            html: getPaymentHTML(safeCustomerKey), 
+            baseUrl: 'http://localhost'
+          }}
+          onNavigationStateChange={handleNavigationStateChange}
+          onMessage={handleMessage}
           javaScriptEnabled={true}
           domStorageEnabled={true}
-          onError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            console.error('WebView error:', nativeEvent);
-            Alert.alert('오류', 'WebView 로드 실패');
-          }}
-          onLoadEnd={() => {
-            console.log('WebView 로드 완료');
-          }}
+          style={{ flex: 1 }}
         />
+        
         {loading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#0064FF" />
-            <Text style={styles.loadingText}>결제 처리 중...</Text>
+            <Text style={styles.loadingText}>결제 승인 중...</Text>
           </View>
         )}
       </SafeAreaView>
     );
   }
 
-  // 플랜 선택 화면
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.content}>
@@ -346,6 +272,18 @@ export default function SubscriptionScreen() {
           </Text>
         </View>
 
+        <PlanCard
+          name="무료 플랜"
+          price="₩0"
+          period="월"
+          features={[
+            '일일 10회 질문 가능',
+            '기본 법률 자문',
+            '채팅 기록 7일 보관',
+          ]}
+          onSelect={() => Alert.alert('알림', '현재 무료 플랜을 사용 중입니다.')}
+        />
+        
         <PlanCard
           name="프리미엄"
           price="₩20,000"
@@ -477,13 +415,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#0064FF',
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });

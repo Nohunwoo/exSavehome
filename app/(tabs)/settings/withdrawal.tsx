@@ -78,14 +78,20 @@ export default function WithdrawalScreen() {
           text: '탈퇴하기',
           style: 'destructive',
           onPress: async () => {
-            // TODO: 실제 탈퇴 API 호출
-            await auth.logout();
-            Alert.alert('완료', '회원 탈퇴가 완료되었습니다.', [
-              {
-                text: '확인',
-                onPress: () => router.replace('/login'),
-              },
-            ]);
+            try {
+              // [핵심 변경] AuthContext에 추가한 withdraw 함수 호출
+              await auth.withdraw();
+              
+              Alert.alert('완료', '회원 탈퇴가 완료되었습니다.', [
+                {
+                  text: '확인',
+                  onPress: () => router.replace('/login'),
+                },
+              ]);
+            } catch (error: any) {
+              // 에러 처리 추가
+              Alert.alert('오류', error.message || '탈퇴 처리에 실패했습니다.');
+            }
           },
         },
       ]

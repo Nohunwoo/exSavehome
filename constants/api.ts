@@ -55,30 +55,24 @@ api.interceptors.response.use(
 //로그인 페이지
 export const authService = {
     login: async (userId: string, password: string) => {
-        // 1. 백엔드로 로그인 요청
         const response = await api.post('/auth/login', { userId, password });
         const data = response.data;
 
-        // 2. 백엔드 응답 확인 
-        // userId가 존재하면 로그인 성공으로 간주합니다.
         if (response.status === 200 && data.userId) {
-            
-            // [핵심] 백엔드가 토큰을 안 주므로, 'userId' 자체를 토큰으로 사용합니다.
             const sessionToken = data.userId; 
 
-            // 3. 사용자 정보 객체 구성
+            // [수정됨] DB의 USER_NAME을 userInfo에 저장
+            // 백엔드 응답에 userName이 있다고 가정합니다. 
+            // (register에서 userName을 보냈으므로 login 응답에도 포함되어야 합니다)
             const userInfo = {
                 id: data.userId,
                 role: data.userRole,
-                // 이름은 백엔드에서 안 넘어오므로 ID로 대체하거나 비워둠
-                name: data.userId 
+                name: data.userName || data.user_name || data.userId // USER_NAME 매핑
             };
 
-            // 4. 기기에 세션 정보 저장
             await AsyncStorage.setItem('authToken', sessionToken);
             await AsyncStorage.setItem('userInfo', JSON.stringify(userInfo));
 
-            // 5. AuthContext가 에러를 내지 않도록 { success: true }를 포함해 리턴
             return {
                 success: true,
                 message: data.message || '로그인 성공',
@@ -86,7 +80,6 @@ export const authService = {
             };
         }
 
-        // 실패한 경우
         return {
             success: false,
             message: data.message || '로그인 실패'
@@ -101,6 +94,14 @@ export const authService = {
     logout: async () => {
         await AsyncStorage.removeItem('authToken');
         await AsyncStorage.removeItem('userInfo');
+    },
+
+    // 회원 탈퇴 API
+    withdraw: async (userId: string) => {
+        // 백엔드 엔드포인트가 /auth/withdraw 라고 가정하고 userId를 보냅니다.
+        // 실제 백엔드 경로에 맞춰 수정이 필요할 수 있습니다 (예: DELETE /auth/{id})
+        const response = await api.post('/auth/withdraw', { userId });
+        return response.data;
     }
 };
 

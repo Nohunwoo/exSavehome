@@ -18,8 +18,9 @@ type AuthContextType = {
   isLoggedIn: boolean | null;
   user: UserProfile | null; // 3. 사용자 정보를 저장할 state 추가
   userId: string | null; // 4. subscription.tsx가 사용할 customerKey (userId)
-  login: (userId: string, password: string) => Promise<void>; // 5. 파라미터 추가
+  login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  withdraw: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -73,11 +74,10 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     } catch (e) {
       console.error('Login error in AuthContext', e);
       setIsLoggedIn(false);
-      throw e; // 오류를 login.tsx로 다시 던져서 UI 처리
+      throw e; 
     }
   };
 
-  // 10. 실제 authService.logout을 호출
   const logout = async () => {
     await authService.logout();
     setIsLoggedIn(false);
@@ -85,8 +85,20 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     setUserId(null);
   };
 
+  const withdraw = async () => {
+    if (userId) {
+      try {
+        await authService.withdraw(userId); // API 호출
+        await logout(); 
+      } catch (e) {
+        console.error('Withdrawal failed', e);
+        throw e;
+      }
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ isLoggedIn, user, userId, login, logout }}>
+    <AuthContext.Provider value={{ isLoggedIn, user, userId, login, logout, withdraw }}>
       {children}
     </AuthContext.Provider>
   );

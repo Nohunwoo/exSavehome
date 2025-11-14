@@ -59,23 +59,16 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
         {/* 1. 사용자 정보 / 로그인 요청 */}
-        {auth.isLoggedIn ? (
+        auth.isLoggedIn ? (
           <View style={styles.profileSection}>
-            <View style={styles.avatar} />
-            <Text style={styles.username}>사용자 이메일</Text>
+            <Text style={styles.username}>
+              {auth.user?.name || auth.user?.id}
+            </Text>
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
               <Text style={styles.loginButtonText}>로그아웃</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.profileSection}>
-            <View style={styles.avatar} />
-            <Text style={styles.username}>로그인이 필요합니다.</Text>
-            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-              <Text style={styles.loginButtonText}>로그인</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        )
 
         {/* 2. 메뉴 섹션 1 (onPress 수정) */}
         <View style={styles.menuSection}>

@@ -15,7 +15,7 @@ export default function SettingsLayout() {
     >
       <Stack.Screen name="index" options={{ title: '환경설정' }} />
       <Stack.Screen name="subscription" options={{ title: '구독 업그레이드' }} />
-      <Stack.Screen name="announcements" options={{ title: '공지사항' }} />
+      <Stack.Screen name="notice" options={{ title: '공지사항' }} />
       <Stack.Screen name="faq" options={{ title: '자주묻는 질문' }} />
       <Stack.Screen name="about" options={{ title: '정보' }} />
       <Stack.Screen name="withdrawal" options={{ title: '회원탈퇴' }} /> 
