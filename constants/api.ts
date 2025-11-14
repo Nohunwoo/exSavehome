@@ -103,10 +103,18 @@ export const authService = {
         await AsyncStorage.removeItem('userInfo');
     }
 };
-// 상담 서비스 추가
+
+// 상담 응답 타입 정의
+interface ConsultResponse {
+  consultId?: string;
+  messages?: any[];
+  title?: string;
+}
+
+// 상담 서비스
 export const consultService = {
   // 상담 생성
-  create: async (userId: string, title: string, content: string) => {
+  create: async (userId: string, title: string, content: string): Promise<ConsultResponse> => {
     try {
       const response = await api.post('/cons/create', {
         userId,
@@ -126,18 +134,55 @@ export const consultService = {
     return response.data;
   },
 
-  // 메시지 전송 (임시 - 실제로는 message API 사용)
-  sendMessage: async (consId: string, sender: 'USER' | 'AI', content: string) => {
-    // TODO: 실제 message API 연동
-    return { success: true };
+  // 메시지 조회 - 타입 명시
+  getMessages: async (consId: string): Promise<ConsultResponse> => {
+    try {
+      // TODO: 실제 API 엔드포인트로 변경
+      // 현재는 임시로 빈 응답 반환
+      console.log('메시지 조회 API 호출:', consId);
+      
+      // 실제 API 호출 (백엔드에 엔드포인트가 있다면)
+      // const response = await api.get(`/cons/${consId}/messages`);
+      // return response.data;
+      
+      // 임시: 빈 응답 반환
+      return {
+        messages: [],
+        title: '새로운 상담'
+      };
+    } catch (error) {
+      console.error('메시지 조회 실패:', error);
+      return {
+        messages: [],
+        title: '새로운 상담'
+      };
+    }
   },
 
-  // 메시지 목록 조회 (임시)
-  getMessages: async (consId: string) => {
-    // TODO: 실제 message API 연동
-    return [];
+  // 메시지 전송
+  sendMessage: async (consId: string, userId: string, content: string) => {
+    try {
+      // TODO: 실제 message API 엔드포인트로 변경
+      console.log('메시지 전송:', { consId, userId, content });
+      
+      // 실제 API 호출 (백엔드에 엔드포인트가 있다면)
+      // const response = await api.post('/message/send', {
+      //   consId,
+      //   userId,
+      //   content,
+      //   sender: 'USER'
+      // });
+      // return response.data;
+      
+      // 임시: 성공 응답
+      return { success: true };
+    } catch (error) {
+      console.error('메시지 전송 실패:', error);
+      throw error;
+    }
   },
 };
+
 //구독 서비스 페이지
 export const subscriptionService = {
   issueBillingKey: async (authKey: string) => {
@@ -149,7 +194,7 @@ export const subscriptionService = {
       throw new Error('User information is not found.');
     }
 
-    const response = await api.post('/sub/issue-billing-key', {
+    const response = await api.post('sub/billing/confirm', {
       authKey,
       customerKey,
     });
@@ -168,7 +213,7 @@ export const subscriptionService = {
 
     const orderId = `order_${Date.now()}`;
 
-    const response = await api.post('/sub/approve-payment', {
+    const response = await api.post('sub/billing/charge', {
       customerKey,
       amount,
       orderName,
@@ -186,7 +231,7 @@ export const subscriptionService = {
       throw new Error('User information is not found.');
     }
 
-    const response = await api.post('/sub/cancel', {
+    const response = await api.post('sub/cancel', {
       userId: user.id,  // 
     });
     return response.data;

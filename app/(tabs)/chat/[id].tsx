@@ -19,13 +19,21 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '@/constants/Colors';
 import { consultService } from '@/constants/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type MessageType = {
   id: string;
   text: string;
   type: 'question' | 'answer';
   imageUri?: string;
+  timestamp?: number;
 };
+
+// 백엔드 응답 타입 정의
+interface ConsultResponse {
+  messages?: any[];
+  title?: string;
+}
 
 const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'answer'; imageUri?: string }) => {
   const isQuestion = type === 'question';
@@ -48,6 +56,7 @@ export default function ChatDetailScreen() {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [loading, setLoading] = useState(false);
   const [chatTitle, setChatTitle] = useState('새 상담');
+  const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   
   const params = useLocalSearchParams();
@@ -67,12 +76,59 @@ export default function ChatDetailScreen() {
     }
   }, [chatTitle, navigation]);
 
-  // 첫 메시지 처리
+  // 초기 메시지 처리 - 한 번만 실행
   useEffect(() => {
-    if (initialMessage) {
+    if (initialMessage && !isInitialized) {
+      console.log('초기 메시지 처리:', initialMessage);
       handleFirstMessage(initialMessage);
+      setIsInitialized(true);
+    } else if (!initialMessage && !isInitialized) {
+      // initialMessage가 없으면 서버에서 기존 메시지 불러오기
+      loadExistingMessages();
+      setIsInitialized(true);
     }
-  }, []);
+  }, [initialMessage, isInitialized]);
+
+  // 기존 메시지 불러오기
+  const loadExistingMessages = async () => {
+    try {
+      setLoading(true);
+      console.log('기존 메시지 불러오기:', sessionId);
+      
+      // API를 통해 기존 메시지 가져오기
+      const response: ConsultResponse = await consultService.getMessages(sessionId);
+      
+      console.log('API 응답:', response);
+      
+      // response가 객체인지 확인하고 messages 속성 체크
+      if (response && typeof response === 'object' && 'messages' in response && Array.isArray(response.messages)) {
+        const formattedMessages: MessageType[] = response.messages.map((msg: any, index: number) => ({
+          id: msg.MSG_ID || `msg_${index}`,
+          text: msg.MSG_CONTENT || '',
+          type: msg.MSG_SENDER === 'USER' ? 'question' : 'answer',
+          timestamp: msg.MSG_DATE ? new Date(msg.MSG_DATE).getTime() : Date.now(),
+        }));
+        
+        setMessages(formattedMessages);
+        
+        // 제목 설정
+        if ('title' in response && response.title) {
+          setChatTitle(response.title);
+        }
+      } else {
+        // API 응답이 배열인 경우 (또는 다른 형식)
+        console.log('예상과 다른 응답 형식:', response);
+        // 빈 메시지로 시작
+        setMessages([]);
+      }
+    } catch (error: any) {
+      console.error('메시지 불러오기 실패:', error);
+      // 실패해도 새 대화로 진행
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 첫 메시지 전송
   const handleFirstMessage = async (messageText: string) => {
@@ -80,17 +136,19 @@ export default function ChatDetailScreen() {
       id: Date.now().toString(),
       text: messageText,
       type: 'question',
+      timestamp: Date.now(),
     };
     
     setMessages([userMessage]);
-    setChatTitle(messageText.substring(0, 20));
+    setChatTitle(messageText.substring(0, 20) + (messageText.length > 20 ? '...' : ''));
 
-    // AI 응답 시뮬레이션
+    // AI 응답 시뮬레이션 (실제로는 API 호출)
     setTimeout(() => {
       const aiMessage: MessageType = {
         id: (Date.now() + 1).toString(),
         text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다. 잠시만 기다려주세요...`,
         type: 'answer',
+        timestamp: Date.now(),
       };
       setMessages(prev => [...prev, aiMessage]);
     }, 1000);
@@ -98,7 +156,9 @@ export default function ChatDetailScreen() {
 
   // 일반 메시지 전송
   const handleSend = async () => {
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      return;
+    }
 
     const messageText = text.trim();
     setText('');
@@ -107,9 +167,23 @@ export default function ChatDetailScreen() {
       id: Date.now().toString(),
       text: messageText,
       type: 'question',
+      timestamp: Date.now(),
     };
     
     setMessages(prev => [...prev, userMessage]);
+
+    // 서버에 메시지 저장
+    try {
+      const userInfo = await AsyncStorage.getItem('userInfo');
+      const user = userInfo ? JSON.parse(userInfo) : null;
+      
+      if (user?.id) {
+        // 메시지 저장 API 호출
+        await consultService.sendMessage(sessionId, user.id, messageText);
+      }
+    } catch (error) {
+      console.error('메시지 저장 실패:', error);
+    }
 
     // AI 응답 시뮬레이션
     setTimeout(() => {
@@ -117,6 +191,7 @@ export default function ChatDetailScreen() {
         id: (Date.now() + 1).toString(),
         text: `"${messageText}"에 대한 AI 답변입니다.`,
         type: 'answer',
+        timestamp: Date.now(),
       };
       setMessages(prev => [...prev, aiMessage]);
     }, 1000);
@@ -147,6 +222,7 @@ export default function ChatDetailScreen() {
         text: `[이미지 첨부] ${fileName}`,
         type: 'question',
         imageUri: imageUri,
+        timestamp: Date.now(),
       };
 
       setMessages(prev => [...prev, imageMessage]);
@@ -156,6 +232,7 @@ export default function ChatDetailScreen() {
           id: (Date.now() + 1).toString(),
           text: `이미지를 분석하고 있습니다. 잠시만 기다려주세요...`,
           type: 'answer',
+          timestamp: Date.now(),
         };
         setMessages(prev => [...prev, aiMessage]);
       }, 1000);
@@ -165,9 +242,20 @@ export default function ChatDetailScreen() {
   // 자동 스크롤
   useEffect(() => {
     if (messages.length > 0) {
-      flatListRef.current?.scrollToEnd({ animated: true });
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
   }, [messages]);
+
+  if (loading && messages.length === 0) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={styles.loadingText}>대화를 불러오는 중...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
@@ -176,40 +264,46 @@ export default function ChatDetailScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={100}
       >
+        {/* 메시지 리스트 */}
         <FlatList
           ref={flatListRef}
-          style={styles.chatList}
           data={messages}
+          keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <Bubble text={item.text} type={item.type} imageUri={item.imageUri} />
           )}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 10 }}
+          contentContainerStyle={styles.messageList}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
-            <MaterialCommunityIcons name="image" size={24} color="#555" />
-          </TouchableOpacity>
-          
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            placeholder="메시지를 입력하세요..."
-            placeholderTextColor="#999"
-            multiline
-          />
-          
-          {text.trim().length > 0 ? (
-            <TouchableOpacity style={styles.iconButton} onPress={handleSend}>
-              <Ionicons name="send" size={24} color={Colors.accent} />
+        {/* 하단 입력창 */}
+        <View style={styles.inputArea}>
+          <View style={styles.inputContainer}>
+            <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
+              <MaterialCommunityIcons name="camera" size={24} color="#666" />
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.iconButton} onPress={() => {}}>
-              <Ionicons name="mic-outline" size={24} color="#555" />
+
+            <TextInput
+              style={styles.input}
+              placeholder="메시지를 입력하세요"
+              placeholderTextColor="#999"
+              value={text}
+              onChangeText={setText}
+              multiline
+            />
+
+            <TouchableOpacity 
+              style={[styles.sendButton, !text.trim() && styles.sendButtonDisabled]} 
+              onPress={handleSend}
+              disabled={!text.trim()}
+            >
+              <Ionicons 
+                name="send" 
+                size={20} 
+                color={text.trim() ? Colors.accent : '#999'} 
+              />
             </TouchableOpacity>
-          )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -221,13 +315,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  chatList: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: Colors.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.textSecondary,
+  },
+  messageList: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
   },
   bubbleContainer: {
     marginVertical: 5,
-    paddingHorizontal: 10,
   },
   questionContainer: {
     alignItems: 'flex-end',
@@ -236,18 +340,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   bubble: {
-    maxWidth: '80%',
+    maxWidth: '75%',
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 16,
   },
   questionBubble: {
     backgroundColor: Colors.accent,
   },
   answerBubble: {
-    backgroundColor: '#2C3A4A',
+    backgroundColor: Colors.darkBlue,
   },
   bubbleText: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 20,
   },
   questionText: {
     color: '#fff',
@@ -257,33 +362,43 @@ const styles = StyleSheet.create({
   },
   imageInBubble: {
     width: 200,
-    height: 200,
-    borderRadius: 12,
+    height: 150,
+    borderRadius: 8,
     marginBottom: 8,
+  },
+  inputArea: {
+    backgroundColor: Colors.inputArea,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    backgroundColor: Colors.inputBox,
+    borderRadius: 24,
+    paddingHorizontal: 15,
     paddingVertical: 8,
-    backgroundColor: Colors.inputArea,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
+  },
+  iconButton: {
+    marginRight: 8,
   },
   input: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    backgroundColor: Colors.inputBox,
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
     fontSize: 16,
     color: Colors.textDark,
+    maxHeight: 100,
   },
-  iconButton: {
-    padding: 8,
+  sendButton: {
+    marginLeft: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
   },
 });

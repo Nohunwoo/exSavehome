@@ -50,9 +50,12 @@ export default function IndexScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const router = useRouter();
 
-  // 새 채팅 시작
+  // 새 채팅 시작 - 채팅방으로 바로 이동
   const handleStartChat = async () => {
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      Alert.alert('알림', '질문을 입력해주세요.');
+      return;
+    }
 
     const messageText = text.trim();
     setText('');
@@ -65,6 +68,7 @@ export default function IndexScreen() {
 
       if (!user?.id) {
         Alert.alert('오류', '로그인이 필요합니다.');
+        router.replace('/login');
         return;
       }
 
@@ -74,7 +78,7 @@ export default function IndexScreen() {
         content: messageText,
       });
 
-      // consultService 사용
+      // consultService 사용하여 새 상담 생성
       const response = await consultService.create(
         user.id,
         messageText.substring(0, 20) + (messageText.length > 20 ? '...' : ''),
@@ -85,7 +89,7 @@ export default function IndexScreen() {
 
       console.log('새 채팅방 생성 성공:', newConsId);
 
-      // 채팅방으로 이동
+      // 채팅방으로 바로 이동 (replace 사용하여 뒤로가기 방지)
       router.push({
         pathname: '/(tabs)/chat/[id]',
         params: {
@@ -122,6 +126,12 @@ export default function IndexScreen() {
     }
   };
 
+  // 예시 질문 클릭 핸들러
+  const handleExampleClick = (exampleText: string) => {
+    setText(exampleText);
+    setIsFocused(true);
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
       <KeyboardAvoidingView
@@ -140,87 +150,69 @@ export default function IndexScreen() {
               
               <TouchableOpacity
                 style={styles.exampleButton}
-                onPress={() => {
-                  setText('전세 계약 시 주의할 점이 무엇인가요?');
-                  setIsFocused(true);
-                }}
+                onPress={() => handleExampleClick('전세 계약 시 주의할 점이 무엇인가요?')}
               >
                 <Text style={styles.exampleText}>전세 계약 시 주의할 점이 무엇인가요?</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.exampleButton}
-                onPress={() => {
-                  setText('임대인이 보증금을 돌려주지 않으면 어떻게 하나요?');
-                  setIsFocused(true);
-                }}
+                onPress={() => handleExampleClick('임대인이 보증금을 돌려주지 않으면 어떻게 하나요?')}
               >
                 <Text style={styles.exampleText}>임대인이 보증금을 돌려주지 않으면 어떻게 하나요?</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.exampleButton}
-                onPress={() => {
-                  setText('월세 계약 중도 해지는 가능한가요?');
-                  setIsFocused(true);
-                }}
+                onPress={() => handleExampleClick('월세 계약 중도 해지는 가능한가요?')}
               >
                 <Text style={styles.exampleText}>월세 계약 중도 해지는 가능한가요?</Text>
               </TouchableOpacity>
             </View>
           </View>
-        ) : (
+        ) : null}
+
+        {/* 메시지 리스트 (나중에 사용) */}
+        {messages.length > 0 && (
           <FlatList
-            style={styles.chatList}
             data={messages}
+            keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <Bubble text={item.text} type={item.type} imageUri={item.imageUri} />
             )}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: 10 }}
+            contentContainerStyle={styles.messageList}
           />
         )}
 
-        <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
-            <MaterialCommunityIcons name="image" size={24} color="#555" />
-          </TouchableOpacity>
-          
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => {
-              if (!text.trim()) {
-                setIsFocused(false);
-              }
-            }}
-            placeholder="메시지를 입력하세요..."
-            placeholderTextColor="#999"
-            multiline
-          />
-          
-          {text.trim().length > 0 ? (
+        {/* 하단 입력창 */}
+        <View style={styles.inputArea}>
+          <View style={styles.inputContainer}>
+            <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
+              <MaterialCommunityIcons name="camera" size={24} color="#666" />
+            </TouchableOpacity>
+
+            <TextInput
+              style={styles.input}
+              placeholder="질문을 입력하세요"
+              placeholderTextColor="#999"
+              value={text}
+              onChangeText={setText}
+              onFocus={() => setIsFocused(true)}
+              multiline
+            />
+
             <TouchableOpacity 
-              style={styles.iconButton} 
+              style={[styles.sendButton, (!text.trim() || loading) && styles.sendButtonDisabled]} 
               onPress={handleStartChat}
-              disabled={loading}
+              disabled={!text.trim() || loading}
             >
               <Ionicons 
                 name="send" 
-                size={24} 
-                color={loading ? '#999' : Colors.accent} 
+                size={20} 
+                color={text.trim() && !loading ? Colors.accent : '#999'} 
               />
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity 
-              style={styles.iconButton} 
-              onPress={() => router.push('/(tabs)/map')}
-            >
-              <Ionicons name="location" size={24} color="#555" />
-            </TouchableOpacity>
-          )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -236,49 +228,48 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 30,
   },
   emptyTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: Colors.text,
     marginTop: 20,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 16,
     color: Colors.textSecondary,
-    textAlign: 'center',
     marginBottom: 40,
   },
   examplesContainer: {
     width: '100%',
-    maxWidth: 350,
+    paddingHorizontal: 20,
   },
   examplesTitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 12,
+    fontSize: 16,
     fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 15,
+    textAlign: 'center',
   },
   exampleButton: {
-    backgroundColor: Colors.darkBlue,
+    backgroundColor: Colors.quickReply,
     padding: 16,
     borderRadius: 12,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   exampleText: {
-    fontSize: 14,
+    fontSize: 15,
     color: Colors.text,
-    lineHeight: 20,
+    textAlign: 'center',
   },
-  chatList: {
-    flex: 1,
-    backgroundColor: Colors.background,
+  messageList: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
   },
   bubbleContainer: {
     marginVertical: 5,
-    paddingHorizontal: 10,
   },
   questionContainer: {
     alignItems: 'flex-end',
@@ -287,18 +278,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   bubble: {
-    maxWidth: '80%',
+    maxWidth: '75%',
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 16,
   },
   questionBubble: {
     backgroundColor: Colors.accent,
   },
   answerBubble: {
-    backgroundColor: '#2C3A4A',
+    backgroundColor: Colors.darkBlue,
   },
   bubbleText: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 20,
   },
   questionText: {
     color: '#fff',
@@ -308,33 +300,43 @@ const styles = StyleSheet.create({
   },
   imageInBubble: {
     width: 200,
-    height: 200,
-    borderRadius: 12,
+    height: 150,
+    borderRadius: 8,
     marginBottom: 8,
+  },
+  inputArea: {
+    backgroundColor: Colors.inputArea,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    backgroundColor: Colors.inputBox,
+    borderRadius: 24,
+    paddingHorizontal: 15,
     paddingVertical: 8,
-    backgroundColor: Colors.inputArea,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
+  },
+  iconButton: {
+    marginRight: 8,
   },
   input: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    backgroundColor: Colors.inputBox,
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
     fontSize: 16,
     color: Colors.textDark,
+    maxHeight: 100,
   },
-  iconButton: {
-    padding: 8,
+  sendButton: {
+    marginLeft: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
   },
 });
