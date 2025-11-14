@@ -21,7 +21,8 @@ type ChatContextType = {
   chatSessions: ChatSession[];
   createChat: () => string;
   updateChatTitle: (id: string, title: string) => void;
-  addMessage: (sessionId: string, message: MessageType) => void; // <--- 새 함수
+  addMessage: (sessionId: string, message: MessageType) => void;
+  deleteChat: (id: string) => void;
 };
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -49,7 +50,6 @@ export const ChatProvider = ({ children }: PropsWithChildren) => {
     );
   };
 
-  // 3. 특정 세션에 메시지를 추가하는 함수
   const addMessage = (sessionId: string, message: MessageType) => {
     setChatSessions((prev) =>
       prev.map((chat) =>
@@ -60,9 +60,13 @@ export const ChatProvider = ({ children }: PropsWithChildren) => {
     );
   };
 
+  const deleteChat = (id: string) => {
+    setChatSessions((prev) => prev.filter((chat) => chat.id !== id));
+  };
+
   return (
     <ChatContext.Provider
-      value={{ chatSessions, createChat, updateChatTitle, addMessage }} // 4. addMessage 제공
+      value={{ chatSessions, createChat, updateChatTitle, addMessage, deleteChat }} // 
     >
       {children}
     </ChatContext.Provider>
