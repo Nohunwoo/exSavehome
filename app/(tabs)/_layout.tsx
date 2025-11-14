@@ -38,7 +38,7 @@ function CustomDrawerContent() {
 
         {/* 최근 상담 내역 */}
         <Text style={styles.recentTitle}>최근 상담 내역</Text>
-        {chatSessions.map((chat, index) => ( // 7. chatSessions 맵핑
+        {chatSessions.map((chat, main) => ( // 7. chatSessions 맵핑
           <TouchableOpacity 
             key={chat.id} 
             style={styles.chatItem} 
@@ -94,7 +94,7 @@ export default function AppLayout() {
     >
       {/* 5. 메인 화면 설정 */}
       <Drawer.Screen
-        name="index"
+        name="main"
         options={({ navigation }) => ({
           title: '법률 자문 서비스',
           headerTitleAlign: 'center',
@@ -153,13 +153,13 @@ export default function AppLayout() {
 const styles = StyleSheet.create({
   drawerContainer: {
     flex: 1,
-    backgroundColor: Colors.darkNavy, // 2. 색상 적용
+    backgroundColor: Colors.darkNavy,
     paddingTop: 20,
   },
   newChatButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333333', // (이 색은 Colors에 추가해도 좋습니다)
+    backgroundColor: '#333333', 
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 15,
@@ -167,12 +167,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   newChatButtonText: {
-    color: Colors.text, // 2. 색상 적용
+    color: Colors.text, 
     fontSize: 16,
     marginLeft: 10,
   },
   recentTitle: {
-    color: Colors.textSecondary, // 2. 색상 적용
+    color: Colors.textSecondary, 
     fontSize: 14,
     paddingHorizontal: 20,
     marginBottom: 10,

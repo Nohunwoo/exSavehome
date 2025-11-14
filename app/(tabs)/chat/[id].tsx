@@ -14,12 +14,12 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '@/constants/Colors';
-import { consultService } from '@/constants/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { consultService } from '@/constants/api';
 
 type MessageType = {
   id: string;
@@ -29,12 +29,7 @@ type MessageType = {
   timestamp?: number;
 };
 
-// 백엔드 응답 타입 정의
-interface ConsultResponse {
-  messages?: any[];
-  title?: string;
-}
-
+// index.tsx와 동일한 Bubble 컴포넌트
 const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'answer'; imageUri?: string }) => {
   const isQuestion = type === 'question';
   return (
@@ -55,6 +50,7 @@ export default function ChatDetailScreen() {
   const [text, setText] = useState('');
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [chatTitle, setChatTitle] = useState('새 상담');
   const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
@@ -66,6 +62,7 @@ export default function ChatDetailScreen() {
     : params.initialMessage;
   
   const navigation = useNavigation();
+  const router = useRouter();
 
   // 채팅방 제목 업데이트
   useEffect(() => {
@@ -89,18 +86,17 @@ export default function ChatDetailScreen() {
     }
   }, [initialMessage, isInitialized]);
 
-  // 기존 메시지 불러오기
+  // 기존 메시지 불러오기 (기존 consultService 사용)
   const loadExistingMessages = async () => {
     try {
       setLoading(true);
       console.log('기존 메시지 불러오기:', sessionId);
       
-      // API를 통해 기존 메시지 가져오기
-      const response: ConsultResponse = await consultService.getMessages(sessionId);
+      // consultService를 통해 기존 메시지 가져오기
+      const response = await consultService.getMessages(sessionId);
       
       console.log('API 응답:', response);
       
-      // response가 객체인지 확인하고 messages 속성 체크
       if (response && typeof response === 'object' && 'messages' in response && Array.isArray(response.messages)) {
         const formattedMessages: MessageType[] = response.messages.map((msg: any, index: number) => ({
           id: msg.MSG_ID || `msg_${index}`,
@@ -111,19 +107,14 @@ export default function ChatDetailScreen() {
         
         setMessages(formattedMessages);
         
-        // 제목 설정
         if ('title' in response && response.title) {
           setChatTitle(response.title);
         }
       } else {
-        // API 응답이 배열인 경우 (또는 다른 형식)
-        console.log('예상과 다른 응답 형식:', response);
-        // 빈 메시지로 시작
         setMessages([]);
       }
     } catch (error: any) {
       console.error('메시지 불러오기 실패:', error);
-      // 실패해도 새 대화로 진행
       setMessages([]);
     } finally {
       setLoading(false);
@@ -142,11 +133,11 @@ export default function ChatDetailScreen() {
     setMessages([userMessage]);
     setChatTitle(messageText.substring(0, 20) + (messageText.length > 20 ? '...' : ''));
 
-    // AI 응답 시뮬레이션 (실제로는 API 호출)
+    // AI 응답 시뮬레이션
     setTimeout(() => {
       const aiMessage: MessageType = {
         id: (Date.now() + 1).toString(),
-        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다. 잠시만 기다려주세요...`,
+        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다. 관련 법률과 판례를 검토하여 답변드리겠습니다.`,
         type: 'answer',
         timestamp: Date.now(),
       };
@@ -154,11 +145,44 @@ export default function ChatDetailScreen() {
     }, 1000);
   };
 
-  // 일반 메시지 전송
-  const handleSend = async () => {
-    if (!text.trim()) {
-      return;
+  // 이미지 선택
+  const handlePickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const imageUri = result.assets[0].uri;
+      
+      const userMessage: MessageType = {
+        id: Date.now().toString(),
+        text: text.trim() || '이미지를 전송했습니다.',
+        type: 'question',
+        imageUri,
+        timestamp: Date.now(),
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+      setText('');
+
+      // AI 응답
+      setTimeout(() => {
+        const aiMessage: MessageType = {
+          id: (Date.now() + 1).toString(),
+          text: '이미지를 확인했습니다. 이미지 내용에 대해 분석하겠습니다.',
+          type: 'answer',
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      }, 1000);
     }
+  };
+
+  // 메시지 전송
+  const handleSend = async () => {
+    if (!text.trim() || loading) return;
 
     const messageText = text.trim();
     setText('');
@@ -172,24 +196,11 @@ export default function ChatDetailScreen() {
     
     setMessages(prev => [...prev, userMessage]);
 
-    // 서버에 메시지 저장
-    try {
-      const userInfo = await AsyncStorage.getItem('userInfo');
-      const user = userInfo ? JSON.parse(userInfo) : null;
-      
-      if (user?.id) {
-        // 메시지 저장 API 호출
-        await consultService.sendMessage(sessionId, user.id, messageText);
-      }
-    } catch (error) {
-      console.error('메시지 저장 실패:', error);
-    }
-
-    // AI 응답 시뮬레이션
+    // AI 응답
     setTimeout(() => {
       const aiMessage: MessageType = {
         id: (Date.now() + 1).toString(),
-        text: `"${messageText}"에 대한 AI 답변입니다.`,
+        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다.`,
         type: 'answer',
         timestamp: Date.now(),
       };
@@ -197,51 +208,9 @@ export default function ChatDetailScreen() {
     }, 1000);
   };
 
-  // 이미지 선택
-  const handlePickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (permissionResult.granted === false) {
-      Alert.alert('권한 필요', '갤러리 접근 권한이 필요합니다.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      const imageUri = result.assets[0].uri;
-      const fileName = imageUri.split('/').pop() || '이미지';
-
-      const imageMessage: MessageType = {
-        id: Date.now().toString(),
-        text: `[이미지 첨부] ${fileName}`,
-        type: 'question',
-        imageUri: imageUri,
-        timestamp: Date.now(),
-      };
-
-      setMessages(prev => [...prev, imageMessage]);
-
-      setTimeout(() => {
-        const aiMessage: MessageType = {
-          id: (Date.now() + 1).toString(),
-          text: `이미지를 분석하고 있습니다. 잠시만 기다려주세요...`,
-          type: 'answer',
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      }, 1000);
-    }
-  };
-
-  // 자동 스크롤
+  // 메시지 리스트가 업데이트될 때 자동 스크롤
   useEffect(() => {
-    if (messages.length > 0) {
+    if (messages.length > 0 && flatListRef.current) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -276,7 +245,7 @@ export default function ChatDetailScreen() {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* 하단 입력창 */}
+        {/* 하단 입력창 - index.tsx와 완전히 동일 */}
         <View style={styles.inputArea}>
           <View style={styles.inputContainer}>
             <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
@@ -285,24 +254,34 @@ export default function ChatDetailScreen() {
 
             <TextInput
               style={styles.input}
-              placeholder="메시지를 입력하세요"
+              placeholder="질문을 입력하세요"
               placeholderTextColor="#999"
               value={text}
               onChangeText={setText}
+              onFocus={() => setIsFocused(true)}
               multiline
             />
 
-            <TouchableOpacity 
-              style={[styles.sendButton, !text.trim() && styles.sendButtonDisabled]} 
-              onPress={handleSend}
-              disabled={!text.trim()}
-            >
-              <Ionicons 
-                name="send" 
-                size={20} 
-                color={text.trim() ? Colors.accent : '#999'} 
-              />
-            </TouchableOpacity>
+            {text.trim() ? (
+              <TouchableOpacity 
+                style={styles.iconButton}
+                onPress={handleSend}
+                disabled={loading}
+              >
+                <Ionicons 
+                  name="send" 
+                  size={24} 
+                  color={loading ? '#999' : Colors.accent} 
+                />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={styles.iconButton} 
+                onPress={() => router.push('/(tabs)/map')}
+              >
+                <Ionicons name="location" size={24} color="#555" />
+              </TouchableOpacity>  
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -310,28 +289,59 @@ export default function ChatDetailScreen() {
   );
 }
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  loadingContainer: {
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    paddingHorizontal: 20,
   },
-  loadingText: {
-    marginTop: 12,
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  emptySubtitle: {
     fontSize: 16,
     color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 40,
   },
-  messageList: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
+  examplesContainer: {
+    width: '100%',
+    maxWidth: 350,
+  },
+  examplesTitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  exampleButton: {
+    backgroundColor: Colors.darkBlue,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  exampleText: {
+    fontSize: 14,
+    color: Colors.text,
+    lineHeight: 20,
+  },
+  chatList: {
+    flex: 1,
+    backgroundColor: Colors.background,
   },
   bubbleContainer: {
     marginVertical: 5,
+    paddingHorizontal: 10,
   },
   questionContainer: {
     alignItems: 'flex-end',
@@ -340,19 +350,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   bubble: {
-    maxWidth: '75%',
+    maxWidth: '80%',
     padding: 12,
-    borderRadius: 16,
+    borderRadius: 18,
   },
   questionBubble: {
     backgroundColor: Colors.accent,
   },
   answerBubble: {
-    backgroundColor: Colors.darkBlue,
+    backgroundColor: '#2C3A4A',
   },
   bubbleText: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 16,
   },
   questionText: {
     color: '#fff',
@@ -362,43 +371,33 @@ const styles = StyleSheet.create({
   },
   imageInBubble: {
     width: 200,
-    height: 150,
-    borderRadius: 8,
+    height: 200,
+    borderRadius: 12,
     marginBottom: 8,
-  },
-  inputArea: {
-    backgroundColor: Colors.inputArea,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.inputBox,
-    borderRadius: 24,
-    paddingHorizontal: 15,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-  },
-  iconButton: {
-    marginRight: 8,
+    backgroundColor: Colors.inputArea,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
   },
   input: {
     flex: 1,
+    minHeight: 40,
+    maxHeight: 100,
+    backgroundColor: Colors.inputBox,
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
     fontSize: 16,
     color: Colors.textDark,
-    maxHeight: 100,
   },
-  sendButton: {
-    marginLeft: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  iconButton: {
+    padding: 8,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
   },
 });

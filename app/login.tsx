@@ -32,7 +32,7 @@ export default function LoginScreen() {
       await auth.login(email, password);
       
       // 로그인 성공 시 메인 화면으로 이동
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/main');
       
     } catch (e: any) {
       console.error('Login Flow Error:', e);

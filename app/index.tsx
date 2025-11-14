@@ -23,7 +23,7 @@ export default function Index() {
   // 3. 확인 완료 후, 로그인 상태에 따라 Redirect
   if (isLoggedIn) {
     // 로그인 됨 -> 메인 탭으로 이동
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/(tabs)/main" />;
   } else {
     // 로그인 안됨 -> 로그인 화면으로 이동
     return <Redirect href="/login" />;
