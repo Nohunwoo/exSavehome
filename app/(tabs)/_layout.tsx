@@ -153,7 +153,7 @@ export default function AppLayout() {
       
       {/* 실제 채팅 화면 */}
       <Drawer.Screen
-        name="chat/id"
+        name="chat/[id]"
         options={({ navigation }) => ({
           title: '새로운 상담',
           drawerItemStyle: { display: 'none' },

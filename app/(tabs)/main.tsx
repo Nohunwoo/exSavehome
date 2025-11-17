@@ -112,7 +112,7 @@ export default function MainScreen() {
 
       // 3. 채팅방으로 이동 (initialMessage와 함께)
       router.push({
-        pathname: '/(tabs)/chat/id',
+        pathname: '/(tabs)/chat/[id]',
         params: {
           id: newConsId,
           initialMessage: messageText,
