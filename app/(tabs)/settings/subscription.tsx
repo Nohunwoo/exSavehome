@@ -16,8 +16,12 @@ import { Colors } from '@/constants/Colors';
 import api from '@/constants/api';
 import { useAuth } from '@/contexts/AuthContext';
 
-// ✅ 클라이언트 키 (테스트용)
-const TOSS_CLIENT_KEY = 'test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq'; 
+// ✅ 클라이언트 키 (테스트용) - Toss 공식 테스트 키
+// 백엔드 TOSS_SECRET_KEY와 짝이 맞는 키 필요
+const TOSS_CLIENT_KEY = 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm';
+
+// ✅ 실제 서버 주소 사용 (localhost 대신)
+const SERVER_BASE_URL = 'http://ceprj.gachon.ac.kr:60003';
 
 type PlanCardProps = {
   name: string;
@@ -69,10 +73,7 @@ export default function SubscriptionScreen() {
   const { userId, isLoggedIn } = useAuth();
   const webViewRef = useRef<WebView>(null);
 
-  // ✅ [수정됨] Buffer 오류 해결 및 customerKey 안전 변환
-  // 토스 허용 문자: 영문 대소문자, 숫자, -, _, =, .
-  // 1. 이메일(@)은 '-at-'으로 변환하여 식별 가능하게 함
-  // 2. 그 외 허용되지 않는 문자(한글, 공백 등)는 모두 제거
+  // customerKey 안전 변환
   const safeCustomerKey = userId 
     ? userId.replace(/@/g, '-at-').replace(/[^a-zA-Z0-9-=_.]/g, '')
     : `ANONYMOUS_${Date.now()}`;
@@ -93,7 +94,9 @@ export default function SubscriptionScreen() {
             background: #f5f5f5; 
             font-family: sans-serif;
           }
-          .container { text-align: center; }
+          .container { text-align: center; padding: 20px; }
+          h2 { color: #333; }
+          p { color: #666; }
         </style>
       </head>
       <body>
@@ -109,11 +112,11 @@ export default function SubscriptionScreen() {
             try {
               const tossPayments = TossPayments(clientKey);
               
-              // successUrl을 localhost로 설정하여 앱에서 가로챔
+              // ✅ HTTP URL 사용 - WebView가 가로채기 전에 로드되지만 상관없음
               tossPayments.requestBillingAuth('카드', {
                 customerKey: customerKey,
-                successUrl: 'http://localhost/success',
-                failUrl: 'http://localhost/fail',
+                successUrl: 'https://example.com/payment-success',
+                failUrl: 'https://example.com/payment-fail',
               })
               .catch(function (error) {
                 if (error.code === 'USER_CANCEL') {
@@ -123,7 +126,7 @@ export default function SubscriptionScreen() {
                 } else {
                   window.ReactNativeWebView.postMessage(JSON.stringify({
                     type: 'ERROR',
-                    message: error.message
+                    message: error.message || '알 수 없는 오류가 발생했습니다.'
                   }));
                 }
               });
@@ -131,7 +134,7 @@ export default function SubscriptionScreen() {
             } catch (error) {
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'ERROR',
-                message: error.message
+                message: error.message || '결제 초기화 실패'
               }));
             }
           }
@@ -147,28 +150,28 @@ export default function SubscriptionScreen() {
   const handleNavigationStateChange = async (navState: WebViewNavigation) => {
     const { url } = navState;
     
-    if (!url) return;
+    if (!url) return true;
 
-    // 성공 URL 감지
-    if (url.includes('http://localhost/success')) {
+    console.log('WebView URL 변경:', url);
+
+    // ✅ 성공 URL 감지 (example.com 사용)
+    if (url.includes('example.com/payment-success')) {
       webViewRef.current?.stopLoading();
       
-      const params = new URLSearchParams(url.split('?')[1]);
-      const authKey = params.get('authKey');
+      try {
+        const params = new URLSearchParams(url.split('?')[1]);
+        const authKey = params.get('authKey');
+        const customerKey = params.get('customerKey');
 
-      if (authKey) {
-        setLoading(true);
-        try {
-          console.log('인증 성공, authKey:', authKey);
-          console.log('전송할 customerKey:', safeCustomerKey);
+        console.log('결제 성공:', { authKey, customerKey });
+
+        if (authKey && customerKey) {
+          setLoading(true);
           
           // 백엔드 승인 요청
-          // 주의: 백엔드는 이 safeCustomerKey로 DB를 조회하므로, 
-          // 만약 DB에 저장된 ID와 달라지면 업데이트가 안 될 수 있습니다.
-          // (하지만 COMMON_ERROR를 피하려면 이 변환이 필수입니다)
           const response = await api.post('/sub/billing/confirm', {
             authKey: authKey,
-            customerKey: safeCustomerKey, 
+            customerKey: customerKey,
             amount: 20000,
             orderName: '프리미엄 구독 1개월'
           });
@@ -180,22 +183,28 @@ export default function SubscriptionScreen() {
           } else {
             Alert.alert('실패', response.data.message || '결제 승인에 실패했습니다.');
           }
-        } catch (error: any) {
-          console.error(error);
-          Alert.alert('오류', '서버 통신 중 오류가 발생했습니다.');
-          setShowWebView(false);
-        } finally {
-          setLoading(false);
+        } else {
+          throw new Error('필수 파라미터가 누락되었습니다.');
         }
+      } catch (error: any) {
+        console.error('결제 승인 오류:', error);
+        const errorMsg = error.response?.data?.message || error.message || '서버 통신 중 오류가 발생했습니다.';
+        Alert.alert('오류', errorMsg);
+        setShowWebView(false);
+      } finally {
+        setLoading(false);
       }
       return false;
     }
 
-    // 실패 URL 감지
-    if (url.includes('http://localhost/fail')) {
+    // ✅ 실패 URL 감지 (example.com 사용)
+    if (url.includes('example.com/payment-fail')) {
       webViewRef.current?.stopLoading();
       const params = new URLSearchParams(url.split('?')[1]);
       const message = params.get('message') || '결제에 실패했습니다.';
+      const code = params.get('code');
+      
+      console.log('결제 실패:', { code, message });
       
       setShowWebView(false);
       Alert.alert('결제 실패', decodeURIComponent(message));
@@ -208,13 +217,18 @@ export default function SubscriptionScreen() {
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      console.log('WebView 메시지:', data);
+      
       if (data.type === 'ERROR') {
         setShowWebView(false);
         Alert.alert('오류', data.message);
       } else if (data.type === 'CANCEL') {
         setShowWebView(false);
+        Alert.alert('취소', '결제가 취소되었습니다.');
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('메시지 파싱 오류:', e);
+    }
   };
 
   const handleSelectPlan = () => {
@@ -222,6 +236,8 @@ export default function SubscriptionScreen() {
       Alert.alert('로그인 필요', '로그인 후 이용해주세요.');
       return;
     }
+    
+    console.log('구독 시작:', { userId, safeCustomerKey });
     setShowWebView(true);
   };
 
@@ -243,13 +259,20 @@ export default function SubscriptionScreen() {
           ref={webViewRef}
           source={{ 
             html: getPaymentHTML(safeCustomerKey), 
-            baseUrl: 'http://localhost'
+            baseUrl: SERVER_BASE_URL
           }}
           onNavigationStateChange={handleNavigationStateChange}
           onMessage={handleMessage}
           javaScriptEnabled={true}
           domStorageEnabled={true}
+          thirdPartyCookiesEnabled={true}
+          sharedCookiesEnabled={true}
           style={{ flex: 1 }}
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            console.error('WebView 오류:', nativeEvent);
+            Alert.alert('오류', 'WebView 로드에 실패했습니다.');
+          }}
         />
         
         {loading && (

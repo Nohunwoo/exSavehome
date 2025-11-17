@@ -20,6 +20,8 @@ type Office = {
   OFFICE_NAME: string;
   OFFICE_ADD: string;
   OFFICE_TEL: string;
+  LAT?: number;
+  LON?: number;
   coordinates?: { latitude: number; longitude: number };
 };
 
@@ -93,28 +95,25 @@ export default function MapScreen() {
       console.log('사무소 목록 불러오는 중...');
       // 백엔드에서 모든 사무소 가져오기
       const response = await api.get('/office/');
-      console.log(`${response.data.length}개 사무소 로드됨`);
+      console.log('백엔드 응답:', response.data);
       
-      // 테스트용 더미 데이터 (백엔드에 데이터가 없을 경우)
-      const testOffices: Office[] = [
-        {
-          OFFICE_ID: 'OFF001',
-          OFFICE_NAME: '정의법률사무소',
-          OFFICE_ADD: '서울시 강남구 테헤란로 123',
-          OFFICE_TEL: '02-1234-5678',
-          coordinates: { latitude: 37.5012, longitude: 127.0396 }
-        },
-        {
-          OFFICE_ID: 'OFF002',
-          OFFICE_NAME: '공정법률사무소',
-          OFFICE_ADD: '서울시 서초구 서초대로 456',
-          OFFICE_TEL: '02-2345-6789',
-          coordinates: { latitude: 37.4833, longitude: 127.0322 }
-        },
-      ];
+      // 백엔드 데이터를 coordinates 형식으로 변환
+      const officeList = response.data.map((office: Office) => {
+        // LAT, LON이 있으면 coordinates로 변환 (문자열을 숫자로 변환)
+        if (office.LAT && office.LON) {
+          return {
+            ...office,
+            coordinates: {
+              latitude: parseFloat(String(office.LAT)),
+              longitude: parseFloat(String(office.LON))
+            }
+          };
+        }
+        return office;
+      });
 
-      // 백엔드 데이터가 없으면 테스트 데이터 사용
-      const officeList = response.data.length > 0 ? response.data : testOffices;
+      console.log(`${officeList.length}개 사무소 로드됨`);
+      console.log('좌표 있는 사무소:', officeList.filter((o: Office) => o.coordinates).length);
       
       setOffices(officeList);
     } catch (error: any) {
@@ -199,7 +198,6 @@ export default function MapScreen() {
         </Text>
         {offices.length > 0 ? (
           <FlatList
-            horizontal
             data={offices.filter(o => o.coordinates)}
             keyExtractor={(item) => item.OFFICE_ID}
             renderItem={({ item }) => (
@@ -208,24 +206,34 @@ export default function MapScreen() {
                 onPress={() => {
                   if (item.coordinates) {
                     setRegion({
-                      ...region,
                       latitude: item.coordinates.latitude,
                       longitude: item.coordinates.longitude,
+                      latitudeDelta: 0.01,
+                      longitudeDelta: 0.01,
                     });
                   }
                 }}
               >
-                <Text style={styles.officeName}>{item.OFFICE_NAME}</Text>
-                <Text style={styles.officeAddress} numberOfLines={2}>
-                  {item.OFFICE_ADD}
-                </Text>
-                <Text style={styles.officeTel}>📞 {item.OFFICE_TEL}</Text>
+                <View style={styles.officeHeader}>
+                  <Ionicons name="business" size={20} color="#0064FF" />
+                  <Text style={styles.officeName}>{item.OFFICE_NAME}</Text>
+                </View>
+                <View style={styles.officeInfo}>
+                  <Ionicons name="location-outline" size={16} color="#666" />
+                  <Text style={styles.officeAddress}>{item.OFFICE_ADD}</Text>
+                </View>
+                <View style={styles.officeInfo}>
+                  <Ionicons name="call-outline" size={16} color="#666" />
+                  <Text style={styles.officeTel}>{item.OFFICE_TEL}</Text>
+                </View>
               </TouchableOpacity>
             )}
-            showsHorizontalScrollIndicator={false}
           />
         ) : (
-          <Text style={styles.noOfficeText}>등록된 법률 사무소가 없습니다.</Text>
+          <View style={styles.emptyContainer}>
+            <Ionicons name="alert-circle-outline" size={48} color="#999" />
+            <Text style={styles.emptyText}>등록된 사무소가 없습니다</Text>
+          </View>
         )}
       </View>
     </View>
@@ -252,7 +260,7 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     position: 'absolute',
-    top: 10,
+    top: Platform.OS === 'ios' ? 50 : 10,
     left: 10,
     right: 10,
     backgroundColor: '#fff',
@@ -262,16 +270,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   errorBannerText: {
     flex: 1,
-    fontSize: 12,
-    color: '#ff6b6b',
     marginLeft: 8,
-    marginRight: 8,
+    fontSize: 14,
+    color: '#333',
+  },
+  listContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '40%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  listTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  officeCard: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  officeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  officeName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+    color: '#333',
+  },
+  officeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  officeAddress: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 6,
+    flex: 1,
+  },
+  officeTel: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 6,
   },
   customMarker: {
     backgroundColor: '#fff',
@@ -280,51 +341,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#ff4444',
   },
-  listContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    padding: 16,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    maxHeight: 200,
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
   },
-  listTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  officeCard: {
-    backgroundColor: '#f5f5f5',
-    padding: 12,
-    borderRadius: 12,
-    marginRight: 12,
-    width: 200,
-  },
-  officeName: {
+  emptyText: {
+    marginTop: 12,
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  officeAddress: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  officeTel: {
-    fontSize: 14,
-    color: '#0064FF',
-  },
-  noOfficeText: {
-    textAlign: 'center',
     color: '#999',
-    paddingVertical: 20,
   },
 });

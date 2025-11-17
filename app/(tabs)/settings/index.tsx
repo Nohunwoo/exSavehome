@@ -2,16 +2,16 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, SafeAreaView, Alert // 1. Alert 추가
+  ScrollView, Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Ionicons, MaterialCommunityIcons, Feather
 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'expo-router'; // 2. useRouter import
+import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 
-// 3. MenuItem 타입 수정 (TypeScript 오류 방지)
 type MenuItemProps = {
   icon: React.ReactNode;
   name: string;
@@ -28,7 +28,7 @@ const MenuItem = ({ icon, name, color = '#fff', onPress }: MenuItemProps) => (
 
 export default function SettingsScreen() {
   const auth = useAuth();
-  const router = useRouter(); // 4. router 훅 사용
+  const router = useRouter();
 
   const handleLogout = async () => {
     await auth.logout();
@@ -39,7 +39,6 @@ export default function SettingsScreen() {
     router.replace('/login');
   };
 
-  // 5. 페이지 이동이 아닌, 단순 액션 함수들
   const handleArchiveAction = () => {
     Alert.alert('아카이브', '채팅 기록을 아카이브에 보관합니다.');
   };
@@ -50,7 +49,7 @@ export default function SettingsScreen() {
       '모든 채팅 기록을 지우시겠습니까? 이 작업은 되돌릴 수 없습니다.',
       [
         { text: '취소', style: 'cancel' },
-        { text: '삭제', style: 'destructive', onPress: () => {} /* TODO: 삭제 로직 */ },
+        { text: '삭제', style: 'destructive', onPress: () => {} },
       ]
     );
   };
@@ -59,7 +58,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
         {/* 1. 사용자 정보 / 로그인 요청 */}
-        auth.isLoggedIn ? (
+        {auth.isLoggedIn ? (
           <View style={styles.profileSection}>
             <Text style={styles.username}>
               {auth.user?.name || auth.user?.id}
@@ -68,9 +67,16 @@ export default function SettingsScreen() {
               <Text style={styles.loginButtonText}>로그아웃</Text>
             </TouchableOpacity>
           </View>
-        )
+        ) : (
+          <View style={styles.profileSection}>
+            <Text style={styles.username}>로그인이 필요합니다</Text>
+            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+              <Text style={styles.loginButtonText}>로그인</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {/* 2. 메뉴 섹션 1 (onPress 수정) */}
+        {/* 2. 메뉴 섹션 1 */}
         <View style={styles.menuSection}>
           <MenuItem
             icon={<Feather name="chevrons-up" size={20} color="#fff" />}
@@ -100,7 +106,7 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* 3. 메뉴 섹션 2 (onPress 수정) */}
+        {/* 3. 메뉴 섹션 2 */}
         <View style={styles.menuSection}>
           <MenuItem
             icon={<Feather name="archive" size={20} color="#fff" />}
@@ -124,7 +130,6 @@ export default function SettingsScreen() {
   );
 }
 
-// 6. 스타일 시트 (기존과 동일하게 유지)
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.darkNavy },
   container: { flex: 1, backgroundColor: Colors.darkNavy },
