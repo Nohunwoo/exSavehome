@@ -50,42 +50,67 @@ export default function MainScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const router = useRouter();
 
+  // 이미지 선택
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('권한 필요', '사진 라이브러리 접근 권한이 필요합니다.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const imageUri = result.assets[0].uri;
+      Alert.alert('알림', '이미지가 선택되었습니다. 질문과 함께 전송하세요.');
+      // 여기서는 이미지만 저장하고, 실제 전송은 handleStartChat에서 처리
+    }
+  };
+
   // 새 채팅 시작
   const handleStartChat = async () => {
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      Alert.alert('알림', '질문을 입력해주세요.');
+      return;
+    }
 
     const messageText = text.trim();
     setText('');
     setLoading(true);
 
     try {
-      // 사용자 정보 가져오기
+      // 1. 사용자 정보 가져오기
       const userInfo = await AsyncStorage.getItem('userInfo');
       const user = userInfo ? JSON.parse(userInfo) : null;
 
       if (!user?.id) {
         Alert.alert('오류', '로그인이 필요합니다.');
+        setLoading(false);
         return;
       }
 
-      console.log('상담 생성 요청:', {
-        userId: user.id,
-        title: messageText.substring(0, 20),
-        content: messageText,
-      });
+      console.log('📝 새 채팅 생성 시작:', { userId: user.id, message: messageText });
 
-      // consultService 사용
+      // 2. 새 채팅방 생성 (백엔드 API 호출)
       const response = await consultService.create(
         user.id,
-        messageText.substring(0, 20) + (messageText.length > 20 ? '...' : ''),
-        messageText
+        messageText.substring(0, 20), // title (사용하지 않지만 인터페이스 유지)
+        messageText // content (사용하지 않지만 인터페이스 유지)
       );
 
-      const newConsId = response.consultId;
+      const newConsId = response.consultId || response.consId;
 
-      console.log('새 채팅방 생성 성공:', newConsId);
+      if (!newConsId) {
+        throw new Error('채팅방 ID를 받지 못했습니다.');
+      }
 
-      // 채팅방으로 이동
+      console.log('✅ 새 채팅방 생성 성공:', newConsId);
+
+      // 3. 채팅방으로 이동 (initialMessage와 함께)
       router.push({
         pathname: '/(tabs)/chat/[id]',
         params: {
@@ -95,127 +120,99 @@ export default function MainScreen() {
       });
 
     } catch (error: any) {
-      console.error('채팅방 생성 실패:', error);
+      console.error('❌ 채팅방 생성 실패:', error);
       Alert.alert('오류', error.message || '채팅방 생성에 실패했습니다.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (permissionResult.granted === false) {
-      Alert.alert('권한 필요', '갤러리 접근 권한이 필요합니다.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      Alert.alert('안내', '이미지 기능은 채팅방에서 사용해주세요.');
-    }
-  };
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={100}
       >
-        {messages.length === 0 && !isFocused ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubbles-outline" size={80} color={Colors.textSecondary} />
-            <Text style={styles.emptyTitle}>부동산 자문 AI 서비스</Text>
-            <Text style={styles.emptySubtitle}>무엇이든 물어보세요!</Text>
-
-            <View style={styles.examplesContainer}>
-              <Text style={styles.examplesTitle}>이런 질문을 해보세요</Text>
+        {/* 메시지 리스트 (메인 화면에서는 비어있음) */}
+        <FlatList
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <Bubble text={item.text} type={item.type} imageUri={item.imageUri} />
+          )}
+          contentContainerStyle={styles.chatList}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyTitle}>법률 자문 서비스</Text>
+              <Text style={styles.emptySubtitle}>
+                궁금한 법률 문제를 입력하시면{'\n'}AI가 상담해드립니다
+              </Text>
               
-              <TouchableOpacity
-                style={styles.exampleButton}
-                onPress={() => {
-                  setText('전세 계약 시 주의할 점이 무엇인가요?');
-                  setIsFocused(true);
-                }}
-              >
-                <Text style={styles.exampleText}>전세 계약 시 주의할 점이 무엇인가요?</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.exampleButton}
-                onPress={() => {
-                  setText('임대인이 보증금을 돌려주지 않으면 어떻게 하나요?');
-                  setIsFocused(true);
-                }}
-              >
-                <Text style={styles.exampleText}>임대인이 보증금을 돌려주지 않으면 어떻게 하나요?</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.exampleButton}
-                onPress={() => {
-                  setText('월세 계약 중도 해지는 가능한가요?');
-                  setIsFocused(true);
-                }}
-              >
-                <Text style={styles.exampleText}>월세 계약 중도 해지는 가능한가요?</Text>
-              </TouchableOpacity>
+              <View style={styles.examplesContainer}>
+                <Text style={styles.examplesTitle}>예시 질문</Text>
+                <TouchableOpacity 
+                  style={styles.exampleButton}
+                  onPress={() => setText('임대차 계약 해지는 어떻게 하나요?')}
+                >
+                  <Text style={styles.exampleText}>
+                    임대차 계약 해지는 어떻게 하나요?
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.exampleButton}
+                  onPress={() => setText('교통사고 합의금은 어떻게 받나요?')}
+                >
+                  <Text style={styles.exampleText}>
+                    교통사고 합의금은 어떻게 받나요?
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.exampleButton}
+                  onPress={() => setText('근로계약서 작성 시 주의사항은?')}
+                >
+                  <Text style={styles.exampleText}>
+                    근로계약서 작성 시 주의사항은?
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        ) : (
-          <FlatList
-            style={styles.chatList}
-            data={messages}
-            renderItem={({ item }) => (
-              <Bubble text={item.text} type={item.type} imageUri={item.imageUri} />
-            )}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: 10 }}
-          />
-        )}
+          }
+        />
 
+        {/* 하단 입력창 */}
         <View style={styles.inputContainer}>
           <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
-            <MaterialCommunityIcons name="image" size={24} color="#555" />
+            <MaterialCommunityIcons name="camera" size={24} color="#666" />
           </TouchableOpacity>
-          
+
           <TextInput
             style={styles.input}
+            placeholder="질문을 입력하세요"
+            placeholderTextColor="#999"
             value={text}
             onChangeText={setText}
             onFocus={() => setIsFocused(true)}
-            onBlur={() => {
-              if (!text.trim()) {
-                setIsFocused(false);
-              }
-            }}
-            placeholder="메시지를 입력하세요..."
-            placeholderTextColor="#999"
+            onBlur={() => setIsFocused(false)}
             multiline
+            maxLength={500}
           />
-          
-          {text.trim().length > 0 ? (
-            <TouchableOpacity 
-              style={styles.iconButton} 
+
+          {text.trim() ? (
+            <TouchableOpacity
+              style={styles.iconButton}
               onPress={handleStartChat}
               disabled={loading}
             >
-              <Ionicons 
-                name="send" 
-                size={24} 
-                color={loading ? '#999' : Colors.accent} 
+              <Ionicons
+                name="send"
+                size={24}
+                color={loading ? '#999' : Colors.accent}
               />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
-              style={styles.iconButton} 
+            <TouchableOpacity
+              style={styles.iconButton}
               onPress={() => router.push('/(tabs)/map')}
             >
               <Ionicons name="location" size={24} color="#555" />

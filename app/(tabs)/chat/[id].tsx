@@ -1,5 +1,5 @@
-// app/(tabs)/chat/[id].tsx
-import React, { useState, useEffect, useRef } from 'react';
+// app/(tabs)/main.tsx
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,12 @@ import {
   Platform,
   KeyboardAvoidingView,
   Image,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { consultService } from '@/constants/api';
@@ -26,10 +25,8 @@ type MessageType = {
   text: string;
   type: 'question' | 'answer';
   imageUri?: string;
-  timestamp?: number;
 };
 
-// index.tsx와 동일한 Bubble 컴포넌트
 const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'answer'; imageUri?: string }) => {
   const isQuestion = type === 'question';
   return (
@@ -46,249 +43,186 @@ const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'an
   );
 };
 
-export default function ChatDetailScreen() {
+export default function MainScreen() {
   const [text, setText] = useState('');
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [chatTitle, setChatTitle] = useState('새 상담');
-  const [isInitialized, setIsInitialized] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  
-  const params = useLocalSearchParams();
-  const sessionId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const initialMessage = Array.isArray(params.initialMessage) 
-    ? params.initialMessage[0] 
-    : params.initialMessage;
-  
-  const navigation = useNavigation();
   const router = useRouter();
-
-  // 채팅방 제목 업데이트
-  useEffect(() => {
-    if (chatTitle) {
-      navigation.setOptions({
-        title: chatTitle,
-      });
-    }
-  }, [chatTitle, navigation]);
-
-  // 초기 메시지 처리 - 한 번만 실행
-  useEffect(() => {
-    if (initialMessage && !isInitialized) {
-      console.log('초기 메시지 처리:', initialMessage);
-      handleFirstMessage(initialMessage);
-      setIsInitialized(true);
-    } else if (!initialMessage && !isInitialized) {
-      // initialMessage가 없으면 서버에서 기존 메시지 불러오기
-      loadExistingMessages();
-      setIsInitialized(true);
-    }
-  }, [initialMessage, isInitialized]);
-
-  // 기존 메시지 불러오기 (기존 consultService 사용)
-  const loadExistingMessages = async () => {
-    try {
-      setLoading(true);
-      console.log('기존 메시지 불러오기:', sessionId);
-      
-      // consultService를 통해 기존 메시지 가져오기
-      const response = await consultService.getMessages(sessionId);
-      
-      console.log('API 응답:', response);
-      
-      if (response && typeof response === 'object' && 'messages' in response && Array.isArray(response.messages)) {
-        const formattedMessages: MessageType[] = response.messages.map((msg: any, index: number) => ({
-          id: msg.MSG_ID || `msg_${index}`,
-          text: msg.MSG_CONTENT || '',
-          type: msg.MSG_SENDER === 'USER' ? 'question' : 'answer',
-          timestamp: msg.MSG_DATE ? new Date(msg.MSG_DATE).getTime() : Date.now(),
-        }));
-        
-        setMessages(formattedMessages);
-        
-        if ('title' in response && response.title) {
-          setChatTitle(response.title);
-        }
-      } else {
-        setMessages([]);
-      }
-    } catch (error: any) {
-      console.error('메시지 불러오기 실패:', error);
-      setMessages([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 첫 메시지 전송
-  const handleFirstMessage = async (messageText: string) => {
-    const userMessage: MessageType = {
-      id: Date.now().toString(),
-      text: messageText,
-      type: 'question',
-      timestamp: Date.now(),
-    };
-    
-    setMessages([userMessage]);
-    setChatTitle(messageText.substring(0, 20) + (messageText.length > 20 ? '...' : ''));
-
-    // AI 응답 시뮬레이션
-    setTimeout(() => {
-      const aiMessage: MessageType = {
-        id: (Date.now() + 1).toString(),
-        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다. 관련 법률과 판례를 검토하여 답변드리겠습니다.`,
-        type: 'answer',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
-  };
 
   // 이미지 선택
   const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('권한 필요', '사진 라이브러리 접근 권한이 필요합니다.');
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets[0]) {
+    if (!result.canceled && result.assets && result.assets.length > 0) {
       const imageUri = result.assets[0].uri;
-      
-      const userMessage: MessageType = {
-        id: Date.now().toString(),
-        text: text.trim() || '이미지를 전송했습니다.',
-        type: 'question',
-        imageUri,
-        timestamp: Date.now(),
-      };
-      
-      setMessages(prev => [...prev, userMessage]);
-      setText('');
-
-      // AI 응답
-      setTimeout(() => {
-        const aiMessage: MessageType = {
-          id: (Date.now() + 1).toString(),
-          text: '이미지를 확인했습니다. 이미지 내용에 대해 분석하겠습니다.',
-          type: 'answer',
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      }, 1000);
+      Alert.alert('알림', '이미지가 선택되었습니다. 질문과 함께 전송하세요.');
+      // 여기서는 이미지만 저장하고, 실제 전송은 handleStartChat에서 처리
     }
   };
 
-  // 메시지 전송
-  const handleSend = async () => {
-    if (!text.trim() || loading) return;
+  // 새 채팅 시작
+  const handleStartChat = async () => {
+    if (!text.trim()) {
+      Alert.alert('알림', '질문을 입력해주세요.');
+      return;
+    }
 
     const messageText = text.trim();
     setText('');
+    setLoading(true);
 
-    const userMessage: MessageType = {
-      id: Date.now().toString(),
-      text: messageText,
-      type: 'question',
-      timestamp: Date.now(),
-    };
-    
-    setMessages(prev => [...prev, userMessage]);
+    try {
+      // 1. 사용자 정보 가져오기
+      const userInfo = await AsyncStorage.getItem('userInfo');
+      const user = userInfo ? JSON.parse(userInfo) : null;
 
-    // AI 응답
-    setTimeout(() => {
-      const aiMessage: MessageType = {
-        id: (Date.now() + 1).toString(),
-        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다.`,
-        type: 'answer',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
+      if (!user?.id) {
+        Alert.alert('오류', '로그인이 필요합니다.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('📝 새 채팅 생성 시작:', { userId: user.id, message: messageText });
+
+      // 2. 새 채팅방 생성 (백엔드 API 호출)
+      const response = await consultService.create(
+        user.id,
+        messageText.substring(0, 20), // title (사용하지 않지만 인터페이스 유지)
+        messageText // content (사용하지 않지만 인터페이스 유지)
+      );
+
+      const newConsId = response.consultId || response.consId;
+
+      if (!newConsId) {
+        throw new Error('채팅방 ID를 받지 못했습니다.');
+      }
+
+      console.log('✅ 새 채팅방 생성 성공:', newConsId);
+
+      // 3. 채팅방으로 이동 (initialMessage와 함께)
+      router.push({
+        pathname: '/(tabs)/chat/[id]',
+        params: {
+          id: newConsId,
+          initialMessage: messageText,
+        },
+      });
+
+    } catch (error: any) {
+      console.error('❌ 채팅방 생성 실패:', error);
+      Alert.alert('오류', error.message || '채팅방 생성에 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // 메시지 리스트가 업데이트될 때 자동 스크롤
-  useEffect(() => {
-    if (messages.length > 0 && flatListRef.current) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages]);
-
-  if (loading && messages.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.accent} />
-        <Text style={styles.loadingText}>대화를 불러오는 중...</Text>
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: styles.container.backgroundColor }}>
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={100}
       >
-        {/* 메시지 리스트 */}
+        {/* 메시지 리스트 (메인 화면에서는 비어있음) */}
         <FlatList
-          ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <Bubble text={item.text} type={item.type} imageUri={item.imageUri} />
           )}
-          contentContainerStyle={styles.messageList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          contentContainerStyle={styles.chatList}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyTitle}>법률 자문 서비스</Text>
+              <Text style={styles.emptySubtitle}>
+                궁금한 법률 문제를 입력하시면{'\n'}AI가 상담해드립니다
+              </Text>
+              
+              <View style={styles.examplesContainer}>
+                <Text style={styles.examplesTitle}>예시 질문</Text>
+                <TouchableOpacity 
+                  style={styles.exampleButton}
+                  onPress={() => setText('임대차 계약 해지는 어떻게 하나요?')}
+                >
+                  <Text style={styles.exampleText}>
+                    임대차 계약 해지는 어떻게 하나요?
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.exampleButton}
+                  onPress={() => setText('교통사고 합의금은 어떻게 받나요?')}
+                >
+                  <Text style={styles.exampleText}>
+                    교통사고 합의금은 어떻게 받나요?
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.exampleButton}
+                  onPress={() => setText('근로계약서 작성 시 주의사항은?')}
+                >
+                  <Text style={styles.exampleText}>
+                    근로계약서 작성 시 주의사항은?
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          }
         />
 
-        {/* 하단 입력창 - index.tsx와 완전히 동일 */}
-        <View style={styles.inputArea}>
-          <View style={styles.inputContainer}>
-            <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
-              <MaterialCommunityIcons name="camera" size={24} color="#666" />
+        {/* 하단 입력창 */}
+        <View style={styles.inputContainer}>
+          <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
+            <MaterialCommunityIcons name="camera" size={24} color="#666" />
+          </TouchableOpacity>
+
+          <TextInput
+            style={styles.input}
+            placeholder="질문을 입력하세요"
+            placeholderTextColor="#999"
+            value={text}
+            onChangeText={setText}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            multiline
+            maxLength={500}
+          />
+
+          {text.trim() ? (
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleStartChat}
+              disabled={loading}
+            >
+              <Ionicons
+                name="send"
+                size={24}
+                color={loading ? '#999' : Colors.accent}
+              />
             </TouchableOpacity>
-
-            <TextInput
-              style={styles.input}
-              placeholder="질문을 입력하세요"
-              placeholderTextColor="#999"
-              value={text}
-              onChangeText={setText}
-              onFocus={() => setIsFocused(true)}
-              multiline
-            />
-
-            {text.trim() ? (
-              <TouchableOpacity 
-                style={styles.iconButton}
-                onPress={handleSend}
-                disabled={loading}
-              >
-                <Ionicons 
-                  name="send" 
-                  size={24} 
-                  color={loading ? '#999' : Colors.accent} 
-                />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity 
-                style={styles.iconButton} 
-                onPress={() => router.push('/(tabs)/map')}
-              >
-                <Ionicons name="location" size={24} color="#555" />
-              </TouchableOpacity>  
-            )}
-          </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => router.push('/(tabs)/map')}
+            >
+              <Ionicons name="location" size={24} color="#555" />
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: {
