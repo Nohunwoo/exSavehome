@@ -1,3 +1,4 @@
+// constants/api.ts
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -109,6 +110,13 @@ interface ConsultResponse {
   message?: string;
   messages?: any[];
   title?: string;
+  // 백엔드 CONS 테이블과 맞춤
+  CONS_ID: string;
+  USER_ID: string;
+  TITLE: string;
+  CONTENT: string;
+  CREATED_AT: string;
+  STATUS: string;
 }
 
 interface MessageResponse {
@@ -120,40 +128,49 @@ interface MessageResponse {
 }
 
 interface AIResponse {
-  success: boolean;
   consId: string;
-  userMessage: string;
-  aiMessage: string;
-  timestamp: string;
+  user: string; // userMessage -> user
+  ai: string;   // aiMessage -> ai
 }
 
 // 상담 서비스 - 실제 백엔드 API와 연동
 export const consultService = {
   // 고유한 consId 생성 함수
   generateConsId: (): string => {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 7).toUpperCase();
-    return `C${timestamp}${random}`;
+    // Date.now() (13자리)의 마지막 5자리 + 5자리 랜덤 문자
+    const timestampPart = Date.now().toString().slice(-5); // 5자리 숫자
+    const randomPart = Math.random().toString(36).substring(2, 7).toUpperCase(); // 5자리 랜덤
+    
+    // 5 + 5 = 10자리 ID (예: 79842FPGXZ)
+    return `${timestampPart}${randomPart}`;
   },
 
   // 상담 생성 (새 채팅방 생성)
-  create: async (userId: string, title: string, content: string): Promise<ConsultResponse> => {
+  // *** 수정된 부분: 3개 인자(userId, title, content) -> 2개 인자(userId, title) ***
+  create: async (userId: string, title: string): Promise<ConsultResponse> => {
     try {
       const consId = consultService.generateConsId();
       
-      console.log('상담 생성 요청:', { consId, userId });
+      console.log('상담 생성 요청:', { consId, userId, title });
 
       const response = await api.post('/cons/create', {
         consId: consId,
         userId: userId,
+        title: title || "새 상담",
+        content: "" // *** 수정된 부분: content는 여기서 보내지 않음 (백엔드 기본값 "" 사용) ***
       });
 
       console.log('상담 생성 응답:', response.data);
 
+      // 백엔드 응답이 { message: "...", consId: "..." } 형태라고 가정
       return {
-        consultId: consId,
-        consId: consId,
-        message: response.data.message,
+        ...response.data, // message, consId 포함
+        CONS_ID: consId, // 로컬에서 생성한 ID를 기준으로 반환
+        USER_ID: userId,
+        TITLE: title || "새 상담",
+        CONTENT: "",
+        CREATED_AT: new Date().toISOString(),
+        STATUS: "PROGRESS"
       };
     } catch (error: any) {
       console.error('상담 생성 API 오류:', error);
@@ -162,9 +179,9 @@ export const consultService = {
   },
 
   // 특정 사용자의 모든 상담 목록 조회
-  getList: async (userId: string) => {
+  getList: async (userId: string): Promise<ConsultResponse[]> => {
     try {
-      const response = await api.get(`/cons/user/${userId}`);
+      const response = await api.get(`/cons/${userId}`);
       return response.data;
     } catch (error: any) {
       console.error('상담 목록 조회 실패:', error);
@@ -212,6 +229,7 @@ export const consultService = {
 
       console.log('AI 응답 수신:', response.data);
 
+      // 백엔드 응답 형식: { consId, user, ai }
       return response.data;
     } catch (error: any) {
       console.error('AI 메시지 전송 실패:', error);
@@ -231,9 +249,10 @@ export const consultService = {
   },
 
   // 상담 삭제
-  deleteConsult: async (consId: string) => {
+  deleteConsult: async (consultId: string) => {
     try {
-      const response = await api.delete(`/cons/${consId}`);
+      // consRouter.js 에서는 :consultId 를 사용하므로, :consultId 에 맞게 전송
+      const response = await api.delete(`/cons/${consultId}`);
       return response.data;
     } catch (error: any) {
       console.error('상담 삭제 실패:', error);

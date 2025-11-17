@@ -96,13 +96,14 @@ export default function MainScreen() {
       console.log('📝 새 채팅 생성 시작:', { userId: user.id, message: messageText });
 
       // 2. 새 채팅방 생성 (백엔드 API 호출)
+      // *** 수정된 부분: content 인자 제거 ***
       const response = await consultService.create(
         user.id,
-        messageText.substring(0, 20), // title (사용하지 않지만 인터페이스 유지)
-        messageText // content (사용하지 않지만 인터페이스 유지)
+        messageText.substring(0, 20) // title
       );
 
-      const newConsId = response.consultId || response.consId;
+      // *** 수정된 부분: 백엔드 응답(CONS_ID) 사용 ***
+      const newConsId = response.CONS_ID || response.consId;
 
       if (!newConsId) {
         throw new Error('채팅방 ID를 받지 못했습니다.');

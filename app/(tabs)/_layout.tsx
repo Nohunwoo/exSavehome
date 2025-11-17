@@ -8,17 +8,29 @@ import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DrawerActions } from '@react-navigation/native';
 import { useChat } from '@/contexts/ChatContext';
+import { useAuth } from '@/contexts/AuthContext'; // *** 1. useAuth 임포트 ***
 
 // 1. 커스텀 드로어(사이드 메뉴) 컴포넌트
 function CustomDrawerContent() {
   const router = useRouter();
-  const { chatSessions, createChat, deleteChat } = useChat(); // deleteChat 추가
-  const [pressedChatId, setPressedChatId] = useState<string | null>(null); // 선택된 채팅 ID 상태
+  const { chatSessions, createChat, deleteChat } = useChat();
+  const { userId } = useAuth(); // *** 2. userId 가져오기 ***
+  const [pressedChatId, setPressedChatId] = useState<string | null>(null);
 
   // "새로운 상담 시작" 버튼 클릭 시
-  const handleNewChat = () => {
-    const newId = createChat();
-    router.push(`/(tabs)/chat/${newId}`);
+  const handleNewChat = async () => {
+    if (!userId) {
+      Alert.alert("로그인 필요", "새로운 상담을 시작하려면 로그인이 필요합니다.");
+      return;
+    }
+    
+    try {
+      // *** 3. (수정) createChat에 userId와 기본 제목 전달 ***
+      const newId = await createChat(userId, '새로운 상담');
+      router.push(`/(tabs)/chat/${newId}`);
+    } catch (error) {
+      Alert.alert("오류", "새 채팅을 만드는 데 실패했습니다.");
+    }
   };
 
   // "최근 상담" 항목 클릭 시
@@ -40,9 +52,14 @@ function CustomDrawerContent() {
         {
           text: '삭제',
           style: 'destructive',
-          onPress: () => {
-            deleteChat(id);
-            setPressedChatId(null);
+          onPress: async () => {
+            // *** 4. (수정) deleteChat이 API를 호출하므로 await 추가 ***
+            try {
+              await deleteChat(id);
+              setPressedChatId(null);
+            } catch (error) {
+              Alert.alert("오류", "삭제에 실패했습니다.");
+            }
           },
         },
       ]
@@ -68,7 +85,8 @@ function CustomDrawerContent() {
               onLongPress={() => setPressedChatId(chat.id)} // 길게 누르기
             >
               <View>
-                <Text style={styles.chatItemTitle}>{chat.title}</Text>
+                {/* 5. (수정) 백엔드 데이터(TITLE) 사용 */}
+                <Text style={styles.chatItemTitle}>{chat.title}</Text> 
                 <Text style={styles.chatItemTime}>
                   {new Date(chat.lastUpdated).toLocaleString()}
                 </Text>
@@ -99,6 +117,8 @@ function CustomDrawerContent() {
     </SafeAreaView>
   );
 }
+
+// ... (이하 CustomHeaderRight, AppLayout, styles는 기존과 동일)
 
 function CustomHeaderRight() {
   const router = useRouter();

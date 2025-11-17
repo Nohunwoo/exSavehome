@@ -9,9 +9,10 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useChat, MessageType } from '@/contexts/ChatContext';
+import { useChat } from '@/contexts/ChatContext';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
+import { MessageType } from '@/types'; // *** 수정된 부분 ***
 
 // 검색 결과에 채팅방 정보(id, title)를 포함
 type SearchResult = MessageType & {
@@ -34,17 +35,21 @@ export default function SearchModal() {
     const allMessages: SearchResult[] = [];
 
     // 2. 모든 세션의 모든 메시지를 순회
-    chatSessions.forEach(session => {
-      session.messages.forEach(message => {
-        if (message.text.toLowerCase().includes(lowerCaseQuery)) {
-          allMessages.push({
-            ...message, // 메시지 정보
-            sessionId: session.id, // 부모 세션 ID
-            sessionTitle: session.title, // 부모 세션 제목
-          });
-        }
-      });
-    }); 
+    // (참고: 이 로직은 Context에 메시지가 없으므로 동작하지 않습니다.)
+    // (ChatContext가 messages를 들고 있지 않게 수정했기 때문에)
+    // (이 검색 기능은 백엔드 API(/cons/search/:userId/:keyword)를 사용하도록 수정이 필요합니다.)
+    
+    // chatSessions.forEach(session => {
+    //   session.messages.forEach(message => {
+    //     if (message.text.toLowerCase().includes(lowerCaseQuery)) {
+    //       allMessages.push({
+    //         ...message, // 메시지 정보
+    //         sessionId: session.id, // 부모 세션 ID
+    //         sessionTitle: session.title, // 부모 세션 제목
+    //       });
+    //     }
+    //   });
+    // }); 
     return allMessages;
   }, [query, chatSessions]);
 

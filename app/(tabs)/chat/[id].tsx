@@ -1,5 +1,5 @@
 // app/(tabs)/chat/[id].tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,8 +18,10 @@ import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '@/constants/Colors';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// *** 1. (제거) AsyncStorage는 AuthContext가 담당하므로 제거
+// import AsyncStorage from '@react-native-async-storage/async-storage';
 import { consultService } from '@/constants/api';
+import { useChat } from '@/contexts/ChatContext'; // *** 2. useChat 임포트 ***
 
 type MessageType = {
   id: string;
@@ -49,7 +51,8 @@ const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'an
 export default function ChatDetailScreen() {
   const [text, setText] = useState('');
   const [messages, setMessages] = useState<MessageType[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // AI 응답 대기 로딩
+  const [initLoading, setInitLoading] = useState(true); // *** 3. 초기 로딩 상태 추가 ***
   const [isFocused, setIsFocused] = useState(false);
   const [chatTitle, setChatTitle] = useState('새 상담');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -63,6 +66,7 @@ export default function ChatDetailScreen() {
   
   const navigation = useNavigation();
   const router = useRouter();
+  const { updateChatTitle, loadSessions } = useChat(); // *** 4. ChatContext 함수 가져오기 ***
 
   // 채팅방 제목 업데이트
   useEffect(() => {
@@ -73,43 +77,89 @@ export default function ChatDetailScreen() {
     }
   }, [chatTitle, navigation]);
 
-  // 초기 메시지 처리 - 한 번만 실행
-  useEffect(() => {
-    if (initialMessage && !isInitialized) {
-      console.log('초기 메시지 처리:', initialMessage);
-      handleFirstMessage(initialMessage);
-      setIsInitialized(true);
-    } else if (!initialMessage && !isInitialized) {
-      // initialMessage가 없으면 서버에서 기존 메시지 불러오기
-      loadExistingMessages();
-      setIsInitialized(true);
+  // *** 5. (수정) 메시지 전송 로직을 공통 함수로 분리 ***
+  const sendMessageToAPI = useCallback(async (messageText: string, imageUri?: string) => {
+    if (!sessionId) return;
+
+    const userMessage: MessageType = {
+      id: Date.now().toString(),
+      text: messageText,
+      type: 'question',
+      imageUri,
+      timestamp: Date.now(),
+    };
+    
+    // (UI) 사용자 메시지 먼저 표시
+    setMessages(prev => [...prev, userMessage]);
+    setLoading(true);
+
+    // (API) 백엔드 AI 서버에 메시지 전송
+    try {
+      // *** 6. (수정) 실제 AI 서비스 호출 ***
+      // cons.js의 sendToAI는 userMessage만 받음 (이미지 전송은 현재 백엔드에 구현 안됨)
+      // 이미지 전송은 UI에만 표시하고, 텍스트만 백엔드로 전송
+      const response = await consultService.sendToAI(sessionId, messageText);
+
+      // (UI) AI 응답 메시지 표시
+      const aiMessage: MessageType = {
+        id: (Date.now() + 1).toString(),
+        text: response.ai, // 백엔드 응답 (response.data.ai)
+        type: 'answer',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, aiMessage]);
+
+      // (UI) 첫 질문인 경우, 채팅방 제목 업데이트 (Context 및 API)
+      if (messages.length === 0 || (messages.length === 1 && initialMessage)) {
+        const newTitle = messageText.substring(0, 20) + (messageText.length > 20 ? '...' : '');
+        setChatTitle(newTitle);
+        updateChatTitle(sessionId, newTitle); // Context 상태 업데이트
+        // (참고: 백엔드에 제목 업데이트 API가 있다면 여기서 호출)
+      }
+
+      // (Context) 채팅 목록 새로고침 (마지막 업데이트 시간 갱신을 위해)
+      loadSessions(); 
+
+    } catch (error: any) {
+      Alert.alert("AI 응답 오류", error.message || "AI 서버와 통신 중 오류가 발생했습니다.");
+      // (UI) 에러 발생 시 사용자 메시지 제거 (선택 사항)
+      // setMessages(prev => prev.filter(m => m.id !== userMessage.id));
+    } finally {
+      setLoading(false);
     }
-  }, [initialMessage, isInitialized]);
+  }, [sessionId, messages.length, initialMessage, updateChatTitle, loadSessions]); // 의존성 배열
+
 
   // 기존 메시지 불러오기 (기존 consultService 사용)
-  const loadExistingMessages = async () => {
+  const loadExistingMessages = useCallback(async () => {
+    if (!sessionId) {
+        setInitLoading(false);
+        return;
+    }
     try {
-      setLoading(true);
       console.log('기존 메시지 불러오기:', sessionId);
+      setInitLoading(true); // *** 7. 초기 로딩 시작 ***
       
-      // consultService를 통해 기존 메시지 가져오기
       const response = await consultService.getMessages(sessionId);
       
       console.log('API 응답:', response);
       
-      if (response && typeof response === 'object' && 'messages' in response && Array.isArray(response.messages)) {
+      if (response && Array.isArray(response.messages)) {
+        
+        // *** 8. (수정) 백엔드 응답 키(CONTENT, SENDER, SEND_TIME)에 맞게 수정 ***
         const formattedMessages: MessageType[] = response.messages.map((msg: any, index: number) => ({
-          id: msg.MSG_ID || `msg_${index}`,
-          text: msg.MSG_CONTENT || '',
-          type: msg.MSG_SENDER === 'USER' ? 'question' : 'answer',
-          timestamp: msg.MSG_DATE ? new Date(msg.MSG_DATE).getTime() : Date.now(),
+          id: (msg.MSG_ID || `msg_${index}`).toString(),
+          text: msg.CONTENT || '', // MSG_CONTENT -> CONTENT
+          type: msg.SENDER === 'USER' ? 'question' : 'answer', // MSG_SENDER -> SENDER
+          timestamp: msg.SEND_TIME ? new Date(msg.SEND_TIME).getTime() : Date.now(), // MSG_DATE -> SEND_TIME
         }));
         
         setMessages(formattedMessages);
         
-        if ('title' in response && response.title) {
-          setChatTitle(response.title);
-        }
+        // (참고: 백엔드 getMessages는 title을 반환하지 않음. ChatContext의 title을 사용)
+        // const session = chatSessions.find(s => s.id === sessionId);
+        // if (session) setChatTitle(session.title);
+        
       } else {
         setMessages([]);
       }
@@ -117,33 +167,25 @@ export default function ChatDetailScreen() {
       console.error('메시지 불러오기 실패:', error);
       setMessages([]);
     } finally {
-      setLoading(false);
+      setInitLoading(false); // *** 9. 초기 로딩 완료 ***
     }
-  };
+  }, [sessionId]); // sessionId가 바뀔 때만 함수 재생성
 
-  // 첫 메시지 전송
-  const handleFirstMessage = async (messageText: string) => {
-    const userMessage: MessageType = {
-      id: Date.now().toString(),
-      text: messageText,
-      type: 'question',
-      timestamp: Date.now(),
-    };
-    
-    setMessages([userMessage]);
-    setChatTitle(messageText.substring(0, 20) + (messageText.length > 20 ? '...' : ''));
+  // 초기 메시지 처리 - 한 번만 실행
+  useEffect(() => {
+    if (!isInitialized && sessionId) {
+      if (initialMessage) {
+        console.log('초기 메시지 처리:', initialMessage);
+        // *** 10. (수정) 첫 메시지 전송 API 호출 ***
+        sendMessageToAPI(initialMessage);
+      } else {
+        // initialMessage가 없으면 서버에서 기존 메시지 불러오기
+        loadExistingMessages();
+      }
+      setIsInitialized(true);
+    }
+  }, [sessionId, initialMessage, isInitialized, loadExistingMessages, sendMessageToAPI]);
 
-    // AI 응답 시뮬레이션
-    setTimeout(() => {
-      const aiMessage: MessageType = {
-        id: (Date.now() + 1).toString(),
-        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다. 관련 법률과 판례를 검토하여 답변드리겠습니다.`,
-        type: 'answer',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
-  };
 
   // 이미지 선택
   const handlePickImage = async () => {
@@ -155,57 +197,24 @@ export default function ChatDetailScreen() {
 
     if (!result.canceled && result.assets[0]) {
       const imageUri = result.assets[0].uri;
-      
-      const userMessage: MessageType = {
-        id: Date.now().toString(),
-        text: text.trim() || '이미지를 전송했습니다.',
-        type: 'question',
-        imageUri,
-        timestamp: Date.now(),
-      };
-      
-      setMessages(prev => [...prev, userMessage]);
+      const messageText = text.trim() || '이미지를 전송했습니다.';
       setText('');
-
-      // AI 응답
-      setTimeout(() => {
-        const aiMessage: MessageType = {
-          id: (Date.now() + 1).toString(),
-          text: '이미지를 확인했습니다. 이미지 내용에 대해 분석하겠습니다.',
-          type: 'answer',
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      }, 1000);
+      
+      // *** 11. (수정) 이미지와 텍스트를 함께 API로 전송 ***
+      // (참고: 현재 백엔드 API(cons.js)는 이미지를 받도록 구현되어 있지 않습니다.)
+      // (우선 텍스트만 전송하고 이미지는 UI에만 표시합니다)
+      sendMessageToAPI(messageText, imageUri);
     }
   };
 
   // 메시지 전송
   const handleSend = async () => {
     if (!text.trim() || loading) return;
-
     const messageText = text.trim();
     setText('');
-
-    const userMessage: MessageType = {
-      id: Date.now().toString(),
-      text: messageText,
-      type: 'question',
-      timestamp: Date.now(),
-    };
     
-    setMessages(prev => [...prev, userMessage]);
-
-    // AI 응답
-    setTimeout(() => {
-      const aiMessage: MessageType = {
-        id: (Date.now() + 1).toString(),
-        text: `"${messageText}"에 대한 답변입니다.\n\n법률 상담 AI가 분석 중입니다.`,
-        type: 'answer',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
+    // *** 12. (수정) 텍스트를 API로 전송 ***
+    sendMessageToAPI(messageText);
   };
 
   // 메시지 리스트가 업데이트될 때 자동 스크롤
@@ -217,7 +226,8 @@ export default function ChatDetailScreen() {
     }
   }, [messages]);
 
-  if (loading && messages.length === 0) {
+  // *** 13. (수정) 초기 로딩 UI 변경 ***
+  if (initLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.accent} />
@@ -247,19 +257,27 @@ export default function ChatDetailScreen() {
 
         {/* 하단 입력창 - index.tsx와 완전히 동일 */}
         <View style={styles.inputArea}>
+          {/* AI 응답 대기 중 로딩 표시 */}
+          {loading && (
+            <View style={styles.loadingIndicator}>
+              <ActivityIndicator size="small" color={Colors.textSecondary} />
+              <Text style={styles.loadingText}>AI가 답변을 생성 중입니다...</Text>
+            </View>
+          )}
           <View style={styles.inputContainer}>
-            <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
-              <MaterialCommunityIcons name="camera" size={24} color="#666" />
+            <TouchableOpacity style={styles.iconButton} onPress={handlePickImage} disabled={loading}>
+              <MaterialCommunityIcons name="camera" size={24} color={loading ? '#ccc' : '#666'} />
             </TouchableOpacity>
 
             <TextInput
               style={styles.input}
-              placeholder="질문을 입력하세요"
+              placeholder={loading ? "AI 응답 대기 중..." : "질문을 입력하세요"}
               placeholderTextColor="#999"
               value={text}
               onChangeText={setText}
               onFocus={() => setIsFocused(true)}
               multiline
+              editable={!loading} // 로딩 중 입력 방지
             />
 
             {text.trim() ? (
@@ -278,8 +296,9 @@ export default function ChatDetailScreen() {
               <TouchableOpacity 
                 style={styles.iconButton} 
                 onPress={() => router.push('/(tabs)/map')}
+                disabled={loading}
               >
-                <Ionicons name="location" size={24} color="#555" />
+                <Ionicons name="location" size={24} color={loading ? '#ccc' : '#555'} />
               </TouchableOpacity>  
             )}
           </View>
@@ -295,48 +314,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  emptyContainer: {
+  // *** 14. (추가) 로딩 스타일 ***
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    backgroundColor: Colors.background,
   },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  emptySubtitle: {
-    fontSize: 16,
+  loadingText: {
+    marginTop: 10,
     color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 40,
-  },
-  examplesContainer: {
-    width: '100%',
-    maxWidth: 350,
-  },
-  examplesTitle: {
     fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-    fontWeight: '600',
   },
-  exampleButton: {
-    backgroundColor: Colors.darkBlue,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  exampleText: {
-    fontSize: 14,
-    color: Colors.text,
-    lineHeight: 20,
-  },
-  chatList: {
-    flex: 1,
+  messageList: {
+    flexGrow: 1, // *** 15. (수정) flex: 1 -> flexGrow: 1 ***
+    paddingBottom: 10, // 하단 여백 추가
     backgroundColor: Colors.background,
   },
   bubbleContainer: {
@@ -375,14 +367,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 8,
   },
+  // *** 16. (추가) 입력 영역 스타일 ***
+  inputArea: {
+    backgroundColor: Colors.inputArea,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  loadingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: Colors.inputArea,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
   },
   input: {
     flex: 1,
