@@ -112,7 +112,7 @@ export default function MainScreen() {
 
       // 3. 채팅방으로 이동 (initialMessage와 함께)
       router.push({
-        pathname: '/(tabs)/chat/[id]',
+        pathname: '/(tabs)/chat/id',
         params: {
           id: newConsId,
           initialMessage: messageText,
@@ -144,7 +144,8 @@ export default function MainScreen() {
           contentContainerStyle={styles.chatList}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>법률 자문 서비스</Text>
+            <Ionicons name="chatbubbles-outline" size={80} color={Colors.textSecondary} />
+            <Text style={styles.emptyTitle}>부동산 자문 AI 서비스</Text>
               <Text style={styles.emptySubtitle}>
                 궁금한 법률 문제를 입력하시면{'\n'}AI가 상담해드립니다
               </Text>
