@@ -146,18 +146,17 @@ export const consultService = {
   },
 
   // 상담 생성 (새 채팅방 생성)
-  // *** 수정된 부분: 3개 인자(userId, title, content) -> 2개 인자(userId, title) ***
   create: async (userId: string, title: string): Promise<ConsultResponse> => {
     try {
       const consId = consultService.generateConsId();
       
       console.log('상담 생성 요청:', { consId, userId, title });
 
-      const response = await api.post('/cons/create', {
+      const response = await api.post('/cons/consult_create', {
         consId: consId,
         userId: userId,
-        title: title || "새 상담",
-        content: "" // *** 수정된 부분: content는 여기서 보내지 않음 (백엔드 기본값 "" 사용) ***
+        title:"새 상담",
+        content: "" 
       });
 
       console.log('상담 생성 응답:', response.data);
@@ -194,7 +193,7 @@ export const consultService = {
     try {
       console.log('메시지 조회 API 호출:', consId);
       
-      const response = await api.get(`/cons/${consId}/messages`);
+      const response = await api.get(`/cons/history/${consId}`);
       
       console.log('메시지 조회 응답:', response.data);
       
@@ -221,7 +220,7 @@ export const consultService = {
   sendToAI: async (consId: string, userMessage: string): Promise<AIResponse> => {
     try {
       console.log('AI 메시지 전송:', { consId, userMessage });
-      
+    
       const response = await api.post('/cons/ai', {
         consId: consId,
         userMessage: userMessage,
@@ -240,7 +239,7 @@ export const consultService = {
   // 메시지 검색
   searchMessages: async (userId: string, keyword: string) => {
     try {
-      const response = await api.get(`/cons/search/${userId}/${keyword}`);
+      const response = await api.get(`/cons/search/message/${userId}/${keyword}`);
       return response.data;
     } catch (error: any) {
       console.error('메시지 검색 실패:', error);
@@ -251,7 +250,6 @@ export const consultService = {
   // 상담 삭제
   deleteConsult: async (consultId: string) => {
     try {
-      // consRouter.js 에서는 :consultId 를 사용하므로, :consultId 에 맞게 전송
       const response = await api.delete(`/cons/${consultId}`);
       return response.data;
     } catch (error: any) {
