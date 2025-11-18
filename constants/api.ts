@@ -62,10 +62,13 @@ export const authService = {
         if (response.status === 200 && data.userId) {
             const sessionToken = data.userId; 
 
+            // [수정됨] 백엔드 응답의 다양한 키 형식을 모두 확인
             const userInfo = {
                 id: data.userId,
                 role: data.userRole,
-                name: data.userName || data.user_name || data.userId
+                name: data.USER_NAME || data.userName || data.user_name || data.userId,
+                sub_status: data.SUB_STATUS || data.subStatus || data.sub_status,
+                sub_date: data.SUB_DATE || data.subDate || data.sub_date // ★★★ 이 줄을 추가했습니다.
             };
 
             await AsyncStorage.setItem('authToken', sessionToken);
@@ -74,7 +77,7 @@ export const authService = {
             return {
                 success: true,
                 message: data.message || '로그인 성공',
-                user: userInfo
+                user: userInfo 
             };
         }
 
@@ -96,9 +99,7 @@ export const authService = {
 
 // 회원 탈퇴 API
     withdraw: async (userId: string) => {
-        // 백엔드 엔드포인트가 /auth/withdraw 라고 가정하고 userId를 보냅니다.
-        // 실제 백엔드 경로에 맞춰 수정이 필요할 수 있습니다 (예: DELETE /auth/{id})
-        const response = await api.post('/auth/withdraw', { userId });
+        const response = await api.delete(`/set/user/${userId}`);
         return response.data;
     }
 };

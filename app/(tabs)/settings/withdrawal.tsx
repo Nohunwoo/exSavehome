@@ -33,7 +33,6 @@ const withdrawalReasons: ReasonOption[] = [
 export default function WithdrawalScreen() {
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [otherReason, setOtherReason] = useState('');
-  const [password, setPassword] = useState('');
   const [agreed, setAgreed] = useState(false);
   const router = useRouter();
   const auth = useAuth();
@@ -55,11 +54,6 @@ export default function WithdrawalScreen() {
 
     if (selectedReasons.includes('7') && otherReason.trim().length === 0) {
       Alert.alert('알림', '기타 사유를 입력해주세요.');
-      return;
-    }
-
-    if (password.length === 0) {
-      Alert.alert('알림', '비밀번호를 입력해주세요.');
       return;
     }
 
@@ -160,26 +154,7 @@ export default function WithdrawalScreen() {
           )}
         </View>
 
-        {/* 비밀번호 확인 */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            비밀번호 확인 <Text style={styles.required}>*</Text>
-          </Text>
-          <Text style={styles.sectionSubtitle}>
-            본인 확인을 위해 비밀번호를 입력해주세요.
-          </Text>
-          <View style={styles.passwordContainer}>
-            <Ionicons name="lock-closed" size={24} color={Colors.textSecondary} />
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="비밀번호"
-              placeholderTextColor={Colors.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-        </View>
+        {/* 비밀번호 확인 섹션 제거됨 */}
 
         {/* 유의사항 동의 */}
         <View style={styles.section}>
@@ -294,14 +269,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
     minHeight: 100,
   },
-  passwordContainer: {
+  passwordContainer: { // (이 스타일은 이제 사용되지 않지만 남겨둡니다)
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.darkBlue,
     borderRadius: 8,
     paddingHorizontal: 15,
   },
-  passwordInput: {
+  passwordInput: { // (이 스타일은 이제 사용되지 않지만 남겨둡니다)
     flex: 1,
     color: Colors.text,
     fontSize: 16,

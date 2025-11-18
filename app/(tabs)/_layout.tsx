@@ -8,7 +8,7 @@ import { Feather, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DrawerActions } from '@react-navigation/native';
 import { useChat } from '@/contexts/ChatContext';
-import { useAuth } from '@/contexts/AuthContext'; // *** 1. useAuth 임포트 ***
+import { useAuth } from '@/contexts/AuthContext'; 
 
 // 1. 커스텀 드로어(사이드 메뉴) 컴포넌트
 function CustomDrawerContent() {

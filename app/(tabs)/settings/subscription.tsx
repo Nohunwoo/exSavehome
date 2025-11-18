@@ -14,11 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { Colors } from '@/constants/Colors';
 import api from '@/constants/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext'; 
 
-// ✅ 클라이언트 키 (테스트용) - Toss 공식 테스트 키
 // 백엔드 TOSS_SECRET_KEY와 짝이 맞는 키 필요
-const TOSS_CLIENT_KEY = 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm';
+const TOSS_CLIENT_KEY = 'test_ck_d46qopOB89xxJdmBELKgrZmM75y0';
 
 // ✅ 실제 서버 주소 사용 (localhost 대신)
 const SERVER_BASE_URL = 'http://ceprj.gachon.ac.kr:60003';
@@ -70,7 +69,8 @@ const PlanCard: React.FC<PlanCardProps> = ({
 export default function SubscriptionScreen() {
   const [showWebView, setShowWebView] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { userId, isLoggedIn } = useAuth();
+  // ★★★ 2. AuthContext에서 userId와 updateSubscriptionStatus 함수 가져오기
+  const { userId, isLoggedIn, updateSubscriptionStatus } = useAuth();
   const webViewRef = useRef<WebView>(null);
 
   // customerKey 안전 변환
@@ -172,7 +172,7 @@ export default function SubscriptionScreen() {
           const response = await api.post('/sub/billing/confirm', {
             authKey: authKey,
             customerKey: customerKey,
-            amount: 20000,
+            amount: 10000,
             orderName: '프리미엄 구독 1개월'
           });
 
@@ -180,6 +180,8 @@ export default function SubscriptionScreen() {
           
           if (response.data.ok) {
             Alert.alert('성공', '구독이 시작되었습니다!');
+            // ★★★ 3. Context 상태를 'premium'으로 즉시 업데이트
+            updateSubscriptionStatus('premium', new Date().toISOString());
           } else {
             Alert.alert('실패', response.data.message || '결제 승인에 실패했습니다.');
           }
@@ -309,7 +311,7 @@ export default function SubscriptionScreen() {
         
         <PlanCard
           name="프리미엄"
-          price="₩20,000"
+          price="₩10,000"
           period="월"
           popular={true}
           features={[

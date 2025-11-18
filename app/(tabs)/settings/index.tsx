@@ -58,18 +58,28 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
         {/* 1. 사용자 정보 / 로그인 요청 */}
-        {auth.isLoggedIn ? (
+        {auth.isLoggedIn && auth.user ? ( // [수정] auth.user가 있는지 확인
           <View style={styles.profileSection}>
-            <Text style={styles.username}>
-              {auth.user?.name || auth.user?.id}
-            </Text>
+            {/* [수정] 이름과 구독 등급을 View로 묶음 */}
+            <View style={styles.userInfoContainer}>
+              <Text style={styles.username}>
+                {auth.user.name || auth.user.id}
+              </Text>
+              {/* [신규] 구독 등급 표시 */}
+              <Text style={styles.subscriptionStatus}>
+                {auth.user.subscriptionLevel === 'premium' ? 'Premium' : 'Free'}
+              </Text>
+            </View>
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
               <Text style={styles.loginButtonText}>로그아웃</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.profileSection}>
-            <Text style={styles.username}>로그인이 필요합니다</Text>
+            {/* [수정] 이름과 구독 등급을 View로 묶음 */}
+            <View style={styles.userInfoContainer}>
+              <Text style={styles.username}>로그인이 필요합니다</Text>
+            </View>
             <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
               <Text style={styles.loginButtonText}>로그인</Text>
             </TouchableOpacity>
@@ -140,8 +150,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
+  // [신규] 사용자 이름과 구독 등급을 묶는 컨테이너
+  userInfoContainer: {
+    flex: 1,
+    marginLeft: 15,
+  },
   avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#555' },
-  username: { flex: 1, color: '#fff', fontSize: 16, marginLeft: 15 },
+  username: { 
+    color: '#fff', 
+    fontSize: 18, // 수정
+    fontWeight: 'bold', // 수정
+  },
+  // [신규] 구독 등급 스타일
+  subscriptionStatus: {
+    color: Colors.accent,
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: '600',
+  },
   loginButton: {
     backgroundColor: '#555',
     paddingVertical: 8,

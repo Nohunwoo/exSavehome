@@ -31,7 +31,8 @@ export type UserProfile = {
   email: string;
   name?: string;
   avatar?: string;
-  subscriptionLevel: 'free' | 'basic' | 'premium';
+  subscriptionLevel: 'free' | 'premium';
+  subscriptionDate?: string | null;
 };
 
 export type Announcement = {

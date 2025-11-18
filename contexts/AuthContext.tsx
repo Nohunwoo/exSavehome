@@ -7,23 +7,39 @@ import React, {
   PropsWithChildren,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// 1. 실제 authService를 import합니다.
 import { authService } from '@/constants/api'; 
-import { UserProfile } from '@/types'; // (types/index.ts에 UserProfile이 있다고 가정)
+import { UserProfile } from '@/types'; 
 
-// 2. api.ts에서 사용하는 토큰 키로 통일합니다.
 const TOKEN_KEY = 'authToken'; 
 
 type AuthContextType = {
   isLoggedIn: boolean | null;
-  user: UserProfile | null; // 3. 사용자 정보를 저장할 state 추가
-  userId: string | null; // 4. subscription.tsx가 사용할 customerKey (userId)
+  user: UserProfile | null; 
+  userId: string | null; 
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   withdraw: () => Promise<void>;
+  // [수정] newDate 파라미터 추가
+  updateSubscriptionStatus: (newStatus: 'free' | 'premium', newDate?: string | null) => void;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+const mapSubStatusToLevel = (status: any): 'free' | 'premium' => {
+  return (status === 1 || status === '1') ? 'premium' : 'free';
+};
+
+const buildProfileFromStoredUser = (storedUser: any): UserProfile | null => {
+    if (!storedUser || !storedUser.id) return null;
+    
+    return {
+        id: storedUser.id,
+        email: storedUser.id, 
+        name: storedUser.name,
+        subscriptionLevel: mapSubStatusToLevel(storedUser.sub_status),
+        subscriptionDate: storedUser.sub_date || null // ★★★ 이 줄을 추가했습니다.
+    };
+};
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
@@ -31,19 +47,22 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    // 6. 앱 시작 시 실제 'authToken'을 확인합니다.
     const checkAuthStatus = async () => {
       try {
         const token = await AsyncStorage.getItem(TOKEN_KEY);
         setIsLoggedIn(!!token);
 
         if (token) {
-          // 7. 토큰이 있다면 'userInfo'도 불러옵니다.
-          const userInfo = await AsyncStorage.getItem('userInfo');
-          if (userInfo) {
-            const parsedUser: UserProfile = JSON.parse(userInfo);
-            setUser(parsedUser);
-            setUserId(parsedUser.id); // (UserProfile에 id 필드가 있다고 가정)
+          const userInfoString = await AsyncStorage.getItem('userInfo');
+          const storedUser = userInfoString ? JSON.parse(userInfoString) : null;
+          
+          const profile = buildProfileFromStoredUser(storedUser);
+
+          if (profile) {
+            setUser(profile);
+            setUserId(profile.id);
+          } else {
+            await logout();
           }
         }
       } catch (e) {
@@ -55,19 +74,15 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     checkAuthStatus();
   }, []);
 
-  // 8. 실제 authService.login을 호출하는 함수로 수정
   const login = async (userIdStr: string, password: string) => {
     try {
       const response = await authService.login(userIdStr, password);
-      if (response.success) {
+      
+      if (response.success && response.user) {
         setIsLoggedIn(true);
-        // 9. api.ts가 저장한 userInfo를 불러와서 state에 저장
-        const userInfo = await AsyncStorage.getItem('userInfo');
-        if (userInfo) {
-          const parsedUser: UserProfile = JSON.parse(userInfo);
-          setUser(parsedUser);
-          setUserId(parsedUser.id);
-        }
+        const profile = buildProfileFromStoredUser(response.user);
+        setUser(profile);
+        setUserId(profile?.id || null);
       } else {
         throw new Error(response.message || 'Login failed');
       }
@@ -88,7 +103,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   const withdraw = async () => {
     if (userId) {
       try {
-        await authService.withdraw(userId); // API 호출
+        await authService.withdraw(userId); 
         await logout(); 
       } catch (e) {
         console.error('Withdrawal failed', e);
@@ -96,9 +111,44 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       }
     }
   };
+  
+  // [수정] 구독 상태 + 날짜를 함께 업데이트하는 함수
+  const updateSubscriptionStatus = (newStatus: 'free' | 'premium', newDate?: string | null) => {
+      // newDate가 undefined이면 현재 시간으로, null이면 null로 설정
+      const dateToSet = newDate === undefined ? new Date().toISOString() : newDate;
+
+      if (user) {
+          // 1. Context 상태를 즉시 업데이트
+          setUser(prevUser => (prevUser ? {
+              ...prevUser,
+              subscriptionLevel: newStatus,
+              // 'free'가 되면 날짜를 null로, 'premium'이 되면 새 날짜로
+              subscriptionDate: newStatus === 'premium' ? dateToSet : null 
+          } : null));
+          
+          // 2. AsyncStorage에도 반영
+          AsyncStorage.getItem('userInfo').then(infoString => {
+              if (infoString) {
+                  const info = JSON.parse(infoString);
+                  info.sub_status = (newStatus === 'premium') ? 1 : 0;
+                  // 'free'가 되면 날짜를 null로, 'premium'이 되면 새 날짜로
+                  info.sub_date = (newStatus === 'premium') ? dateToSet : null; 
+                  AsyncStorage.setItem('userInfo', JSON.stringify(info));
+              }
+          });
+      }
+  };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, user, userId, login, logout, withdraw }}>
+    <AuthContext.Provider value={{ 
+      isLoggedIn, 
+      user, 
+      userId, 
+      login, 
+      logout, 
+      withdraw,
+      updateSubscriptionStatus 
+    }}>
       {children}
     </AuthContext.Provider>
   );
