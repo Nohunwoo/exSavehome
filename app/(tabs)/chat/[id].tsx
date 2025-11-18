@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Colors } from '@/constants/Colors';
 import { consultService } from '@/constants/api';
 import { useChat } from '@/contexts/ChatContext'; 
+import { useAuth } from '@/contexts/AuthContext';
 import { MessageType } from '@/types'; 
 import { ChatBubble } from '@/components/ChatBubble'; // ◀◀◀ 1. 로컬 Bubble 대신 import
 
@@ -43,6 +44,7 @@ export default function ChatDetailScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const { updateChatTitle, loadSessions, chatSessions } = useChat();
+  const { userId } = useAuth();
 
   // 채팅방 제목 설정
   useEffect(() => {
@@ -151,43 +153,67 @@ export default function ChatDetailScreen() {
 
 
   // PDF 선택 핸들러
-  const handlePickDocument = async () => {
-    if (!sessionId) return;
-    
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
+const handlePickDocument = async () => {
+  if (!sessionId) return;
+  
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+    });
+
+    console.log('📄 DocumentPicker 결과:', result); // ← 디버깅용
+
+    if (result.assets && result.assets[0]) {
+      const file = result.assets[0];
+
+      // ★★★ 디버깅: 파일 정보 확인 ★★★
+      console.log('📄 선택된 파일:', {
+        uri: file.uri,
+        name: file.name,
+        size: file.size,
       });
 
-      if (result.assets && result.assets[0]) {
-        const file = result.assets[0];
+      const userMessage: MessageType = {
+        id: Date.now().toString(),
+        text: `📄 PDF 파일 전송: ${file.name}`,
+        type: 'question',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setLoading(true);
 
-        const userMessage: MessageType = {
-          id: Date.now().toString(),
-          text: `PDF 파일 전송: ${file.name}`,
-          type: 'question',
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, userMessage]);
-        setLoading(true);
+      console.log('📤 PDF 전송 시작:', { sessionId, fileName: file.name });
 
-        const response = await consultService.sendPdf(sessionId, file.uri, file.name);
+      // ★★★ 중요: file.uri를 전달! ★★★
+      const response = await consultService.sendPdf(
+        sessionId,    // consId
+        file.uri,     // ← 이게 제대로 된 파일 URI여야 함
+        file.name     // fileName
+      );
 
-        const aiMessage: MessageType = {
-          id: (Date.now() + 1).toString(),
-          text: response.ai || 'PDF 분석이 완료되었습니다.',
-          type: 'answer',
-          timestamp: Date.now(),
-        };
-        setMessages(prev => [...prev, aiMessage]);
-        loadSessions();
-      }
-    } catch (error: any) {
-      Alert.alert('PDF 업로드 실패', error.message || '파일을 처리할 수 없습니다.');
-    } finally {
-      setLoading(false);
+      console.log('✅ PDF 분석 완료:', response);
+
+      const aiMessage: MessageType = {
+        id: (Date.now() + 1).toString(),
+        text: response.ai || '📄 PDF 분석이 완료되었습니다.',
+        type: 'answer',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      loadSessions();
+    } else {
+      console.log('❌ 파일 선택 취소됨');
     }
-  };
+  } catch (error: any) {
+    console.error('❌ PDF 업로드 실패:', error);
+    Alert.alert(
+      'PDF 업로드 실패', 
+      error.message || '파일을 처리할 수 없습니다.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
 
   // 텍스트 메시지 전송

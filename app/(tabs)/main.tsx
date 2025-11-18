@@ -54,47 +54,71 @@ export default function MainScreen() {
   const router = useRouter();
   const { userId } = useAuth(); // ◀◀◀ 현재 로그인한 사용자 ID 가져오기
 
-  // ★★★ 신규: PDF 첨부 및 새 채팅 시작 ★★★
-  const handlePickDocumentAndStartChat = async () => {
-    if (!userId) {
-      Alert.alert('로그인 필요', '파일을 업로드하려면 로그인이 필요합니다.');
-      return;
-    }
+  //PDF 첨부 및 새 채팅 시작
+const handlePickDocumentAndStartChat = async () => {
+  if (!userId) {
+    Alert.alert('로그인 필요', '파일을 업로드하려면 로그인이 필요합니다.');
+    return;
+  }
 
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+    });
+
+    console.log('📄 DocumentPicker 결과:', result); // ← 디버깅용
+
+    if (result.assets && result.assets[0]) {
+      const file = result.assets[0];
+      
+      // ★★★ 디버깅: 파일 정보 확인 ★★★
+      console.log('📄 선택된 파일:', {
+        uri: file.uri,
+        name: file.name,
+        size: file.size,
       });
 
-      if (result.assets && result.assets[0]) {
-        const file = result.assets[0];
-        setLoading(true);
+      setLoading(true);
 
-        // 1. 파일명을 제목으로 새 채팅방 생성
-        const newTitle = file.name;
-        const createResponse = await consultService.create(userId, newTitle);
-        const newConsId = createResponse.CONS_ID || createResponse.consId;
+      // 1. 파일명을 제목으로 새 채팅방 생성
+      const newTitle = file.name;
+      const createResponse = await consultService.create(userId, newTitle);
+      const newConsId = createResponse.CONS_ID || createResponse.consId;
 
-        if (!newConsId) {
-          throw new Error('채팅방 생성에 실패했습니다.');
-        }
-
-        // 2. 생성된 채팅방에 PDF 파일 전송 및 AI 분석 요청
-        await consultService.sendPdf(newConsId, file.uri, file.name); //
-
-        // 3. 분석이 완료된 채팅방으로 이동
-        router.push({
-          pathname: '/(tabs)/chat/[id]',
-          params: { id: newConsId },
-        });
-
+      if (!newConsId) {
+        throw new Error('채팅방 생성에 실패했습니다.');
       }
-    } catch (error: any) {
-      Alert.alert('파일 업로드 실패', error.message || '파일 처리 중 오류가 발생했습니다.');
-    } finally {
-      setLoading(false);
+
+      console.log('✅ 채팅방 생성 완료:', newConsId);
+
+      // 2. ★★★ 중요: file.uri를 전달! ★★★
+      const pdfResponse = await consultService.sendPdf(
+        newConsId,      // consId
+        file.uri,       // ← 이게 제대로 된 파일 URI여야 함
+        file.name       // fileName
+      );
+      
+      console.log('✅ PDF 분석 완료:', pdfResponse);
+
+      // 3. 분석이 완료된 채팅방으로 이동
+      router.push({
+        pathname: '/(tabs)/chat/[id]',
+        params: { id: newConsId },
+      });
+
+    } else {
+      console.log('❌ 파일 선택 취소됨');
     }
-  };
+  } catch (error: any) {
+    console.error('❌ 파일 업로드 실패:', error);
+    Alert.alert(
+      '파일 업로드 실패', 
+      error.message || '파일 처리 중 오류가 발생했습니다.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
 
   // ★★★ 수정: 텍스트로 새 채팅 시작 (제목 생성) ★★★
@@ -144,7 +168,6 @@ export default function MainScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* ◀◀◀ 전체 화면 로딩 오버레이 (파일 업로드 시) */}
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.accent} />
@@ -157,7 +180,6 @@ export default function MainScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={100}
       >
-        {/* ... (FlatList 및 ListEmptyComponent 동일) ... */}
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}

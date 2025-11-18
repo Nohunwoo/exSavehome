@@ -1,7 +1,7 @@
 // constants/api.ts
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const API_BASE_URL = 'http://ceprj.gachon.ac.kr:60003';
 
@@ -218,33 +218,61 @@ export const consultService = {
     }
   },
 
-  // PDF 전송 함수
-  sendPdf: async (consId: string, fileUri: string, fileName: string) => {
-    try {
-      const formData = new FormData();
-      formData.append('consId', consId);
+ // PDF 전송 함수 (Base64 방식)
+sendPdf: async (consId: string, fileUri: string, fileName: string) => {
+  try {
+    const userInfo = await AsyncStorage.getItem('userInfo');
+    const user = userInfo ? JSON.parse(userInfo) : null;
+    const userId = user?.id;
 
-      const fileData: any = {
-        uri: fileUri,
-        name: fileName,
-        type: 'application/pdf',
-      };
-      formData.append('file', fileData);
-
-      console.log('PDF 전송 요청:', { consId, fileName });
-
-      // ★★★ 수정: headers 객체를 완전히 제거합니다. ★★★
-      // axios가 FormData를 보고 자동으로 Content-Type과 boundary를 설정합니다.
-      const response = await api.post('/cons/pdf', formData);
-
-      console.log('PDF 분석 응답:', response.data);
-      return response.data;
-      
-    } catch (error: any) {
-      console.error('PDF 전송 실패:', error);
-      throw new Error(error.message || 'PDF 파일 분석에 실패했습니다.');
+    if (!userId) {
+      throw new Error('사용자 정보를 찾을 수 없습니다. 다시 로그인해주세요.');
     }
-  },
+
+    console.log('📤 PDF 전송 시작:', { consId, userId, fileName });
+
+    // ★★★ 수정: EncodingType 대신 문자열 'base64' 사용 ★★★
+    const base64 = await FileSystem.readAsStringAsync(fileUri, {
+      encoding: 'base64', // ← 이렇게 변경
+    });
+
+    console.log('📄 Base64 변환 완료, 길이:', base64.length);
+
+    // JSON 형태로 전송
+    const response = await api.post('/cons/pdf', {
+      consId,
+      userId,
+      filename: fileName,
+      content: base64,
+    }, {
+      timeout: 120000, // 2분 타임아웃
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    console.log('✅ PDF 분석 응답:', response.data);
+    return response.data;
+    
+  } catch (error: any) {
+    console.error('❌ PDF 전송 실패:', error);
+    
+    // 에러 상세 정보 출력
+    if (error.response) {
+      console.error('서버 응답 에러:', error.response.status, error.response.data);
+    } else if (error.request) {
+      console.error('요청 에러 (응답 없음):', error.request);
+    } else {
+      console.error('설정 에러:', error.message);
+    }
+    
+    throw new Error(
+      error.response?.data?.error || 
+      error.message || 
+      'PDF 파일 분석에 실패했습니다.'
+    );
+  }
+},
 
   // 제목 수정 함수 
   updateTitle: async (consId: string, newTitle: string) => {
