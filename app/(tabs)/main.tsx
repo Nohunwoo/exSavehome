@@ -11,14 +11,16 @@ import {
   KeyboardAvoidingView,
   Image,
   Alert,
+  ActivityIndicator, // ◀◀◀ 로딩을 위해 추가
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker'; // ◀◀◀ PDF를 위해 DocumentPicker import
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { consultService } from '@/constants/api';
+import { useAuth } from '@/contexts/AuthContext'; // ◀◀◀ userId를 위해 AuthContext import
 
 type MessageType = {
   id: string;
@@ -27,6 +29,7 @@ type MessageType = {
   imageUri?: string;
 };
 
+// Bubble 컴포넌트 (변경 없음)
 const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'answer'; imageUri?: string }) => {
   const isQuestion = type === 'question';
   return (
@@ -49,32 +52,60 @@ export default function MainScreen() {
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const router = useRouter();
+  const { userId } = useAuth(); // ◀◀◀ 현재 로그인한 사용자 ID 가져오기
 
-  // 이미지 선택
-  const handlePickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('권한 필요', '사진 라이브러리 접근 권한이 필요합니다.');
+  // ★★★ 신규: PDF 첨부 및 새 채팅 시작 ★★★
+  const handlePickDocumentAndStartChat = async () => {
+    if (!userId) {
+      Alert.alert('로그인 필요', '파일을 업로드하려면 로그인이 필요합니다.');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const imageUri = result.assets[0].uri;
-      Alert.alert('알림', '이미지가 선택되었습니다. 질문과 함께 전송하세요.');
-      // 여기서는 이미지만 저장하고, 실제 전송은 handleStartChat에서 처리
+      if (result.assets && result.assets[0]) {
+        const file = result.assets[0];
+        setLoading(true);
+
+        // 1. 파일명을 제목으로 새 채팅방 생성
+        const newTitle = file.name;
+        const createResponse = await consultService.create(userId, newTitle);
+        const newConsId = createResponse.CONS_ID || createResponse.consId;
+
+        if (!newConsId) {
+          throw new Error('채팅방 생성에 실패했습니다.');
+        }
+
+        // 2. 생성된 채팅방에 PDF 파일 전송 및 AI 분석 요청
+        await consultService.sendPdf(newConsId, file.uri, file.name); //
+
+        // 3. 분석이 완료된 채팅방으로 이동
+        router.push({
+          pathname: '/(tabs)/chat/[id]',
+          params: { id: newConsId },
+        });
+
+      }
+    } catch (error: any) {
+      Alert.alert('파일 업로드 실패', error.message || '파일 처리 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // 새 채팅 시작
+
+  // ★★★ 수정: 텍스트로 새 채팅 시작 (제목 생성) ★★★
   const handleStartChat = async () => {
     if (!text.trim()) {
       Alert.alert('알림', '질문을 입력해주세요.');
+      return;
+    }
+
+    if (!userId) {
+      Alert.alert('로그인 필요', '채팅을 시작하려면 로그인이 필요합니다.');
       return;
     }
 
@@ -83,38 +114,23 @@ export default function MainScreen() {
     setLoading(true);
 
     try {
-      // 1. 사용자 정보 가져오기
-      const userInfo = await AsyncStorage.getItem('userInfo');
-      const user = userInfo ? JSON.parse(userInfo) : null;
+      // 1. 사용자의 첫 질문을 제목으로 사용
+      const newTitle = messageText.substring(0, 30) + (messageText.length > 30 ? '...' : '');
 
-      if (!user?.id) {
-        Alert.alert('오류', '로그인이 필요합니다.');
-        setLoading(false);
-        return;
-      }
-
-      console.log('📝 새 채팅 생성 시작:', { userId: user.id, message: messageText });
-
-      // 2. 새 채팅방 생성 (백엔드 API 호출)
-      const response = await consultService.create(
-        user.id,
-        "새로운 상담" // title
-      );
+      // 2. 새 채팅방 생성 (수정된 consultService.create 호출)
+      const response = await consultService.create(userId, newTitle); //
       
       const newConsId = response.CONS_ID || response.consId;
-
       if (!newConsId) {
         throw new Error('채팅방 ID를 받지 못했습니다.');
       }
 
-      console.log('✅ 새 채팅방 생성 성공:', newConsId);
-
-      // 3. 채팅방으로 이동 
+      // 3. 채팅방으로 이동 (첫 메시지 전달)
       router.push({
         pathname: '/(tabs)/chat/[id]',
         params: {
           id: newConsId,
-          initialMessage: messageText,
+          initialMessage: messageText, //
         },
       });
 
@@ -128,12 +144,20 @@ export default function MainScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* ◀◀◀ 전체 화면 로딩 오버레이 (파일 업로드 시) */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={Colors.accent} />
+          <Text style={styles.loadingText}>채팅방 생성 중...</Text>
+        </View>
+      )}
+      
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={100}
       >
-        {/* 메시지 리스트 (메인 화면에서는 비어있음) */}
+        {/* ... (FlatList 및 ListEmptyComponent 동일) ... */}
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}
@@ -161,18 +185,18 @@ export default function MainScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={styles.exampleButton}
-                  onPress={() => setText('교통사고 합의금은 어떻게 받나요?')}
+                  onPress={() => setText('집주인이 전세를 안주면 어떻게 해야하나요')}
                 >
                   <Text style={styles.exampleText}>
-                    교통사고 합의금은 어떻게 받나요?
+                    집주인이 전세를 안주면 어떻게 해야하나요
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={styles.exampleButton}
-                  onPress={() => setText('근로계약서 작성 시 주의사항은?')}
+                  onPress={() => setText('집주인이 월세를 제가 모르게 올렸어요')}
                 >
                   <Text style={styles.exampleText}>
-                    근로계약서 작성 시 주의사항은?
+                    집주인이 월세를 제가 모르게 올렸어요
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -182,8 +206,18 @@ export default function MainScreen() {
 
         {/* 하단 입력창 */}
         <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.iconButton} onPress={handlePickImage}>
-            <MaterialCommunityIcons name="camera" size={24} color="#666" />
+          
+          {/* ★★★ 신규: PDF 첨부 버튼 ★★★ */}
+          <TouchableOpacity 
+            style={styles.iconButton} 
+            onPress={handlePickDocumentAndStartChat}
+            disabled={loading}
+          >
+            <Ionicons // ◀◀◀ 아이콘 변경
+              name="attach" 
+              size={24} 
+              color={loading ? '#ccc' : '#666'} 
+            />
           </TouchableOpacity>
 
           <TextInput
@@ -196,8 +230,10 @@ export default function MainScreen() {
             onBlur={() => setIsFocused(false)}
             multiline
             maxLength={500}
+            editable={!loading}
           />
 
+          {/* ★★★ 수정: 텍스트 입력 시에만 전송 버튼 활성화 ★★★ */}
           {text.trim() ? (
             <TouchableOpacity
               style={styles.iconButton}
@@ -211,11 +247,13 @@ export default function MainScreen() {
               />
             </TouchableOpacity>
           ) : (
+            // 텍스트가 없으면 지도 버튼 표시
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => router.push('/(tabs)/map')}
+              disabled={loading}
             >
-              <Ionicons name="location" size={24} color="#555" />
+              <Ionicons name="location" size={24} color={loading ? '#ccc' : '#555'} />
             </TouchableOpacity>
           )}
         </View>
@@ -224,11 +262,13 @@ export default function MainScreen() {
   );
 }
 
+// ... (styles는 기존과 동일)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
+  // ... (emptyContainer, emptyTitle, emptySubtitle, etc. 동일)
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -333,5 +373,23 @@ const styles = StyleSheet.create({
     padding: 8,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // ◀◀◀ 로딩 오버레이 스타일 추가
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10, // ◀◀◀ 다른 요소들 위에 표시
+  },
+  loadingText: {
+    marginTop: 10,
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

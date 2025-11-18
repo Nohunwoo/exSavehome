@@ -1,12 +1,13 @@
 // constants/api.ts
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 
 const API_BASE_URL = 'http://ceprj.gachon.ac.kr:60003';
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 30000, // AI 응답 대기 시간 고려하여 30초로 증가
+    timeout: 180000, // AI 응답 대기 시간 고려하여 30초로 증가
 });
 
 // 요청 인터셉터 (토큰 자동 추가)
@@ -156,7 +157,7 @@ export const consultService = {
       const response = await api.post('/cons/consult_create', {
         consId: consId,
         userId: userId,
-        title:"새 상담",
+        title: title || "새 상담",
         content: "" 
       });
 
@@ -214,6 +215,45 @@ export const consultService = {
       return {
         messages: []
       };
+    }
+  },
+
+  // PDF 전송 함수
+  sendPdf: async (consId: string, fileUri: string, fileName: string) => {
+    try {
+      const formData = new FormData();
+      formData.append('consId', consId);
+
+      const fileData: any = {
+        uri: fileUri,
+        name: fileName,
+        type: 'application/pdf',
+      };
+      formData.append('file', fileData);
+
+      console.log('PDF 전송 요청:', { consId, fileName });
+
+      // ★★★ 수정: headers 객체를 완전히 제거합니다. ★★★
+      // axios가 FormData를 보고 자동으로 Content-Type과 boundary를 설정합니다.
+      const response = await api.post('/cons/pdf', formData);
+
+      console.log('PDF 분석 응답:', response.data);
+      return response.data;
+      
+    } catch (error: any) {
+      console.error('PDF 전송 실패:', error);
+      throw new Error(error.message || 'PDF 파일 분석에 실패했습니다.');
+    }
+  },
+
+  // 제목 수정 함수 
+  updateTitle: async (consId: string, newTitle: string) => {
+    try {
+      const response = await api.put(`/cons/update/title/${consId}`, { newTitle });
+      return response.data; // cons.js는 { message, consId, newTitle } 반환
+    } catch (error: any) {
+      console.error('제목 수정 실패:', error);
+      throw new Error(error.message || '제목 수정에 실패했습니다.');
     }
   },
 

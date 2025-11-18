@@ -16,37 +16,22 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Colors } from '@/constants/Colors';
 import { consultService } from '@/constants/api';
 import { useChat } from '@/contexts/ChatContext'; 
-import { MessageType } from '@/types'; // *** 1. (수정) MessageType을 types/index.ts에서 가져옴 ***
+import { MessageType } from '@/types'; 
+import { ChatBubble } from '@/components/ChatBubble'; // ◀◀◀ 1. 로컬 Bubble 대신 import
 
-// index.tsx와 동일한 Bubble 컴포넌트
-const Bubble = ({ text, type, imageUri }: { text: string; type: 'question' | 'answer'; imageUri?: string }) => {
-  const isQuestion = type === 'question';
-  return (
-    <View style={[styles.bubbleContainer, isQuestion ? styles.questionContainer : styles.answerContainer]}>
-      <View style={[styles.bubble, isQuestion ? styles.questionBubble : styles.answerBubble]}>
-        {imageUri && (
-          <Image source={{ uri: imageUri }} style={styles.imageInBubble} resizeMode="cover" />
-        )}
-        <Text style={[styles.bubbleText, isQuestion ? styles.questionText : styles.answerText]}>
-          {text}
-        </Text>
-      </View>
-    </View>
-  );
-};
+// ◀◀◀ 2. [id].tsx 내부에 있던 로컬 Bubble 컴포넌트 정의를 삭제합니다.
 
 export default function ChatDetailScreen() {
   const [text, setText] = useState('');
   const [messages, setMessages] = useState<MessageType[]>([]);
-  const [loading, setLoading] = useState(false); // AI 응답 대기 로딩
-  const [initLoading, setInitLoading] = useState(true); // *** 2. (수정) 초기 로딩 상태는 true로 시작 ***
+  const [loading, setLoading] = useState(false);
+  const [initLoading, setInitLoading] = useState(true);
   const [isFocused, setIsFocused] = useState(false);
   const [chatTitle, setChatTitle] = useState('새 상담');
-  const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   
   const params = useLocalSearchParams();
@@ -57,28 +42,26 @@ export default function ChatDetailScreen() {
   
   const navigation = useNavigation();
   const router = useRouter();
-  const { updateChatTitle, loadSessions, chatSessions } = useChat(); // *** 3. (수정) chatSessions 추가 ***
+  const { updateChatTitle, loadSessions, chatSessions } = useChat();
 
-  // 채팅방 제목 업데이트
+  // 채팅방 제목 설정
   useEffect(() => {
-    // *** 4. (수정) Context의 chatSessions에서 현재 방 제목을 찾아 설정 ***
     const session = chatSessions.find(s => s.id === sessionId);
     const title = session?.title || '새 상담';
     setChatTitle(title);
     navigation.setOptions({
       title: title,
     });
-  }, [sessionId, chatSessions, navigation]); // sessionId나 chatSessions가 바뀔 때 갱신
+  }, [sessionId, chatSessions, navigation]);
 
-  // 메시지 전송 로직 (API 연동)
-  const sendMessageToAPI = useCallback(async (messageText: string, imageUri?: string) => {
+  // 텍스트 메시지 전송
+  const sendMessageToAPI = useCallback(async (messageText: string) => {
     if (!sessionId) return;
 
     const userMessage: MessageType = {
       id: Date.now().toString(),
       text: messageText,
       type: 'question',
-      imageUri,
       timestamp: Date.now(),
     };
     
@@ -86,36 +69,28 @@ export default function ChatDetailScreen() {
     setLoading(true);
 
     try {
-      // 실제 AI 서비스 호출
       const response = await consultService.sendToAI(sessionId, messageText);
-
       const aiMessage: MessageType = {
         id: (Date.now() + 1).toString(),
-        text: response.ai, // 백엔드 응답 (response.ai)
+        text: response.ai,
         type: 'answer',
         timestamp: Date.now(),
       };
       setMessages(prev => [...prev, aiMessage]);
 
-      // (UI) 첫 질문인 경우, 채팅방 제목 업데이트 (Context 및 API)
-      if (messages.length === 0 || (messages.length === 1 && initialMessage)) {
-        const newTitle = messageText.substring(0, 20) + (messageText.length > 20 ? '...' : '');
-        setChatTitle(newTitle);
-        updateChatTitle(sessionId, newTitle); 
+      if (initialMessage && messageText === initialMessage) {
+         loadSessions();
       }
-      
-      loadSessions(); 
 
     } catch (error: any) {
-      // *** 5. (수정) AI 응답 실패 시 사용자에게 알림 ***
       Alert.alert("AI 응답 오류", error.message || "AI 서버와 통신 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
-  }, [sessionId, messages.length, initialMessage, updateChatTitle, loadSessions]); // 의존성 배열
+  }, [sessionId, initialMessage, updateChatTitle, loadSessions]); 
 
 
-  // 기존 메시지 불러오기 (API 연동)
+  // 기존 메시지 로드
   const loadExistingMessages = useCallback(async () => {
     if (!sessionId) {
         setInitLoading(false);
@@ -127,8 +102,6 @@ export default function ChatDetailScreen() {
       
       const response = await consultService.getMessages(sessionId);
       
-      console.log('API 응답:', response);
-      
       if (response && Array.isArray(response.messages)) {
         const formattedMessages: MessageType[] = response.messages.map((msg: any, index: number) => ({
           id: (msg.MSG_ID || `msg_${index}`).toString(),
@@ -136,9 +109,7 @@ export default function ChatDetailScreen() {
           type: msg.SENDER === 'USER' ? 'question' : 'answer',
           timestamp: msg.SEND_TIME ? new Date(msg.SEND_TIME).getTime() : Date.now(),
         }));
-        
         setMessages(formattedMessages);
-        
       } else {
         setMessages([]);
       }
@@ -146,70 +117,88 @@ export default function ChatDetailScreen() {
       console.error('메시지 불러오기 실패:', error);
       setMessages([]);
     } finally {
-      setInitLoading(false); // *** 6. (수정) 로딩 완료 시 항상 false ***
+      setInitLoading(false); 
     }
   }, [sessionId]); 
 
-  // *** 7. (수정) 초기 메시지 처리 로직 변경 ***
+  // 초기 로드 및 ID 변경 감지 (무한 루프 수정됨)
   useEffect(() => {
-    if (!isInitialized && sessionId) {
-      const handleInitialLoad = async () => {
-        try {
-          if (initialMessage) {
-            console.log('초기 메시지 처리:', initialMessage);
-            // 1. await를 추가하여 API 호출이 끝날 때까지 기다림
-            await sendMessageToAPI(initialMessage);
-          } else {
-            // 2. 첫 메시지가 없으면 기존 메시지 로드
-            await loadExistingMessages();
-          }
-        } catch (error) {
-          // 3. 에러가 발생해도 로딩은 끝내야 함
-          console.error("초기 로드 중 에러:", error);
-        } finally {
-          // 4. 어떤 경우든, 초기 로딩 상태를 false로 변경
-          setInitLoading(false);
-          setIsInitialized(true);
-        }
-      };
-
-      handleInitialLoad();
-
-    } else if (!sessionId && !isInitialized) {
-       // (엣지 케이스) sessionId가 없는 경우
-       setInitLoading(false);
-       setIsInitialized(true);
+    if (!sessionId) {
+      setInitLoading(false);
+      setMessages([]);
+      return;
     }
-  }, [sessionId, initialMessage, isInitialized, loadExistingMessages, sendMessageToAPI]); // 의존성 배열
+    setInitLoading(true);
+    setMessages([]);
+
+    const handleInitialLoad = async () => {
+      try {
+        if (initialMessage) {
+          await sendMessageToAPI(initialMessage);
+        } else {
+          await loadExistingMessages();
+        }
+      } catch (error) {
+        console.error("초기 로드 중 에러:", error);
+        setMessages([]);
+      } finally {
+        setInitLoading(false);
+      }
+    };
+
+    handleInitialLoad();
+  }, [sessionId, initialMessage, loadExistingMessages, sendMessageToAPI]);
 
 
-  // 이미지 선택
-  const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
+  // PDF 선택 핸들러
+  const handlePickDocument = async () => {
+    if (!sessionId) return;
+    
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      const imageUri = result.assets[0].uri;
-      const messageText = text.trim() || '이미지를 전송했습니다.';
-      setText('');
-      
-      sendMessageToAPI(messageText, imageUri);
+      if (result.assets && result.assets[0]) {
+        const file = result.assets[0];
+
+        const userMessage: MessageType = {
+          id: Date.now().toString(),
+          text: `PDF 파일 전송: ${file.name}`,
+          type: 'question',
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        setLoading(true);
+
+        const response = await consultService.sendPdf(sessionId, file.uri, file.name);
+
+        const aiMessage: MessageType = {
+          id: (Date.now() + 1).toString(),
+          text: response.ai || 'PDF 분석이 완료되었습니다.',
+          type: 'answer',
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, aiMessage]);
+        loadSessions();
+      }
+    } catch (error: any) {
+      Alert.alert('PDF 업로드 실패', error.message || '파일을 처리할 수 없습니다.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // 메시지 전송
+
+  // 텍스트 메시지 전송
   const handleSend = async () => {
     if (!text.trim() || loading) return;
     const messageText = text.trim();
     setText('');
-    
     sendMessageToAPI(messageText);
   };
 
-  // 메시지 리스트가 업데이트될 때 자동 스크롤
+  // 자동 스크롤
   useEffect(() => {
     if (messages.length > 0 && flatListRef.current) {
       setTimeout(() => {
@@ -218,7 +207,51 @@ export default function ChatDetailScreen() {
     }
   }, [messages]);
 
-  // *** 8. (수정) 초기 로딩 UI ***
+  // 제목 수정 핸들러
+  const handleEditTitle = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        '제목 변경',
+        '새로운 채팅방 제목을 입력하세요.',
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '저장',
+            onPress: async (newTitle) => {
+              if (newTitle && newTitle.trim().length > 0 && sessionId) {
+                try {
+                  await consultService.updateTitle(sessionId, newTitle.trim());
+                  await loadSessions(); 
+                  navigation.setOptions({ title: newTitle.trim() }); 
+                  setChatTitle(newTitle.trim());
+                } catch (error: any) {
+                  Alert.alert('오류', error.message || '제목 변경에 실패했습니다.');
+                }
+              }
+            },
+          },
+        ],
+        'plain-text',
+        chatTitle
+      );
+    } else {
+      Alert.alert('알림', '안드로이드에서는 이 방식의 제목 변경이 지원되지 않습니다.');
+    }
+  }, [sessionId, chatTitle, navigation, loadSessions]);
+
+  // 헤더에 수정 버튼 추가
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={handleEditTitle} style={{ marginRight: 15 }}>
+          <Ionicons name="pencil" size={22} color={Colors.textDark} />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, handleEditTitle]);
+
+
+  // 초기 로딩 UI
   if (initLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -240,16 +273,16 @@ export default function ChatDetailScreen() {
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
+          // ◀◀◀ 3. renderItem에서 Bubble 대신 ChatBubble을 사용합니다.
           renderItem={({ item }) => (
-            <Bubble text={item.text} type={item.type} imageUri={item.imageUri} />
+            <ChatBubble message={item} />
           )}
           contentContainerStyle={styles.messageList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* 하단 입력창 - index.tsx와 완전히 동일 */}
+        {/* 하단 입력창 */}
         <View style={styles.inputArea}>
-          {/* AI 응답 대기 중 로딩 표시 */}
           {loading && (
             <View style={styles.loadingIndicator}>
               <ActivityIndicator size="small" color={Colors.textSecondary} />
@@ -257,8 +290,17 @@ export default function ChatDetailScreen() {
             </View>
           )}
           <View style={styles.inputContainer}>
-            <TouchableOpacity style={styles.iconButton} onPress={handlePickImage} disabled={loading}>
-              <MaterialCommunityIcons name="camera" size={24} color={loading ? '#ccc' : '#666'} />
+            {/* PDF 첨부 버튼 */}
+            <TouchableOpacity 
+              style={styles.iconButton} 
+              onPress={handlePickDocument}
+              disabled={loading}
+            >
+              <Ionicons 
+                name="attach" 
+                size={24} 
+                color={loading ? '#ccc' : '#666'} 
+              />
             </TouchableOpacity>
 
             <TextInput
@@ -269,9 +311,10 @@ export default function ChatDetailScreen() {
               onChangeText={setText}
               onFocus={() => setIsFocused(true)}
               multiline
-              editable={!loading} // 로딩 중 입력 방지
+              editable={!loading}
             />
 
+            {/* 전송 또는 지도 버튼 */}
             {text.trim() ? (
               <TouchableOpacity 
                 style={styles.iconButton}
@@ -300,7 +343,7 @@ export default function ChatDetailScreen() {
   );
 }
 
-
+// ... (styles는 기존과 동일합니다)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -322,8 +365,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     backgroundColor: Colors.background,
   },
-  bubbleContainer: {
-    marginVertical: 5,
+  bubbleContainer: { // ◀◀◀ 이 스타일은 ChatBubble 컴포넌트가 사용하지 않을 수 있지만,
+    marginVertical: 5,  //    혹시 모를 충돌을 막기 위해 남겨둡니다.
     paddingHorizontal: 10,
   },
   questionContainer: {

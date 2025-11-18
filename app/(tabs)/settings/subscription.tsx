@@ -156,6 +156,11 @@ export default function SubscriptionScreen() {
 
     // ✅ 성공 URL 감지 (example.com 사용)
     if (url.includes('example.com/payment-success')) {
+      
+      if (loading) {
+        console.log('이미 결제 승인 처리 중입니다. 중복 요청을 무시합니다.');
+        return false; // 더 이상 진행하지 않음
+      }
       webViewRef.current?.stopLoading();
       
       try {

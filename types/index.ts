@@ -6,6 +6,7 @@ export type MessageType = {
   text: string;
   type: 'question' | 'answer';
   timestamp?: number;
+  imageUri?: string; 
   attachments?: FileAttachment[];
 };
 
